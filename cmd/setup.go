@@ -778,8 +778,9 @@ type setupModel struct {
 	fcursor int
 
 	// validating
-	spinFrame int
-	authURL   string
+	spinFrame  int
+	authURL    string
+	authStatus string
 
 	// Plex account server selection
 	plexServers      []plexServerChoice
@@ -837,6 +838,13 @@ type plexAuthDoneMsg struct {
 	err      error
 }
 
+type plexAuthApprovedMsg struct {
+	api      *plex.AccountAPI
+	clientID string
+	token    string
+	err      error
+}
+
 func spinTickCmd() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return spinTickMsg{} })
 }
@@ -873,9 +881,14 @@ func waitPlexAuthCmd(api *plex.AccountAPI, session *plex.SignInSession, clientID
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		token, err := session.Wait(ctx)
-		if err != nil {
-			return plexAuthDoneMsg{err: err}
-		}
+		return plexAuthApprovedMsg{api: api, clientID: clientID, token: token, err: err}
+	}
+}
+
+func discoverPlexServersCmd(api *plex.AccountAPI, token, clientID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		servers, err := api.ReachableServers(ctx, token, clientID)
 		return plexAuthDoneMsg{clientID: clientID, token: token, servers: servers, err: err}
 	}
@@ -917,7 +930,16 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.onPlexAuthError(msg.err)
 		}
 		m.authURL = msg.session.URL()
+		m.authStatus = "Waiting for Plex browser sign-in…"
 		return m, tea.Batch(openBrowserCmd(m.authURL), waitPlexAuthCmd(msg.api, msg.session, msg.clientID))
+
+	case plexAuthApprovedMsg:
+		if msg.err != nil {
+			return m.onPlexAuthError(msg.err)
+		}
+		m.authURL = ""
+		m.authStatus = "Finding reachable Plex servers…"
+		return m, discoverPlexServersCmd(msg.api, msg.token, msg.clientID)
 
 	case plexAuthDoneMsg:
 		if msg.err != nil {
@@ -1026,6 +1048,7 @@ func (m *setupModel) startProvider(idx int) {
 	m.awaitingSave = false
 	m.saveFailed = nil
 	m.authURL = ""
+	m.authStatus = ""
 	m.plexServers = nil
 	m.plexServerCursor = 0
 
@@ -1206,6 +1229,7 @@ func (m *setupModel) submitForm() (tea.Model, tea.Cmd) {
 		m.stage = stageValidating
 		m.spinFrame = 0
 		m.authURL = ""
+		m.authStatus = "Starting Plex sign-in…"
 		return m, tea.Batch(spinTickCmd(), beginPlexAuthCmd(clientID))
 	}
 
@@ -1491,7 +1515,10 @@ func (m *setupModel) viewValidating() string {
 	frame := frames[m.spinFrame%len(frames)]
 	message := "Verifying connection to " + m.provs[m.pidx].name + "…"
 	if m.provs[m.pidx].section == "plex" && m.values[keyPlexAuth] == "account" {
-		message = "Waiting for Plex browser sign-in…"
+		message = m.authStatus
+		if message == "" {
+			message = "Starting Plex sign-in…"
+		}
 		if m.authURL != "" {
 			message += "\n\nIf the browser did not open, visit:\n" + m.authURL
 		}

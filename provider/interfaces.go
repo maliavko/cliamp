@@ -321,9 +321,8 @@ type CustomStreamer interface {
 }
 
 // TrackFavoriter is implemented by providers that keep a favorite state for
-// tracks on their own service, such as liked or starred songs. The local
-// favorites store stays the source of truth. The UI copies each change to the
-// provider that owns the track.
+// tracks on their own service, such as liked or starred songs. The UI copies
+// each change to the provider that owns the track.
 type TrackFavoriter interface {
 	// CanFavoriteTrack reports whether track belongs to this provider. It must
 	// not do I/O because the UI calls it on the Update goroutine.
@@ -331,6 +330,14 @@ type TrackFavoriter interface {
 	// SetTrackFavorite sets or clears the favorite state of track on the
 	// provider's service.
 	SetTrackFavorite(ctx context.Context, track playlist.Track, favorite bool) error
+}
+
+// TrackFavoriteState is implemented by providers that return favorite state
+// with their track metadata. Its methods must not do I/O because list rows and
+// IPC snapshots call them on the Update goroutine.
+type TrackFavoriteState interface {
+	CanFavoriteTrack(track playlist.Track) bool
+	FavoriteState(track playlist.Track) (favorite, known bool)
 }
 
 // FavoriteToggler is implemented by providers that support marking items
