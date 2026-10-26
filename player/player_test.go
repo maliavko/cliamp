@@ -28,6 +28,27 @@ func newTestPlayer() *Player {
 	return p
 }
 
+func TestTogglePauseKeepsSpeakerRunning(t *testing.T) {
+	p := newTestPlayer()
+	p.ctrl = &beep.Ctrl{}
+
+	p.TogglePause()
+	if !p.IsPaused() || !p.ctrl.Paused {
+		t.Fatal("first toggle did not pause playback")
+	}
+	if p.suspended {
+		t.Fatal("pause suspended the audio backend")
+	}
+
+	p.TogglePause()
+	if p.IsPaused() || p.ctrl.Paused {
+		t.Fatal("second toggle did not resume playback")
+	}
+	if p.suspended {
+		t.Fatal("resume changed the audio backend suspension state")
+	}
+}
+
 func TestSetVolumeClamps(t *testing.T) {
 	p := newTestPlayer()
 

@@ -383,9 +383,9 @@ func (p *Player) GaplessAdvanced() bool {
 	return p.gaplessAdvance.CompareAndSwap(true, false)
 }
 
-// TogglePause toggles between paused and playing states.
-// When pausing, the speaker is suspended to save CPU; when unpausing
-// it is resumed so the audio callback drains the queued samples.
+// TogglePause toggles between paused and playing states. The speaker keeps
+// running while paused so its backend buffers stay primed; suspending the
+// whole audio context here can cause an underrun shortly after unpausing.
 func (p *Player) TogglePause() {
 	speaker.Lock()
 	if p.ctrl != nil {
@@ -393,11 +393,6 @@ func (p *Player) TogglePause() {
 		paused := p.ctrl.Paused
 		speaker.Unlock()
 		p.paused.Store(paused)
-		if paused {
-			p.suspendSpeaker()
-		} else {
-			p.resumeSpeaker()
-		}
 	} else {
 		speaker.Unlock()
 	}
