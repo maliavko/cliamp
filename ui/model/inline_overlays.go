@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/bjarneo/cliamp/lyrics"
 	"github.com/bjarneo/cliamp/playlist"
@@ -371,15 +372,53 @@ func (m Model) renderInfoBody() string {
 }
 
 func (m Model) infoLines() []string {
+	width := m.infoWidth()
 	var lines []string
 	for _, field := range m.metadataFields() {
-		lines = append(lines, dimStyle.Render("  "+field.label+": ")+trackStyle.Render(field.value))
+		lines = append(lines, infoFieldLines(field.label, field.value, width)...)
 	}
 	if path := metadataText(m.selectedMetadataTrack().Path); path != "" {
-		lines = append(lines, dimStyle.Render("  Path: ")+trackStyle.Render(path))
+		lines = append(lines, infoFieldLines("Path", path, width)...)
 	}
 	if len(lines) == 0 {
 		lines = append(lines, dimStyle.Render("  No track metadata available."))
+	}
+	return lines
+}
+
+// infoWidth is the width of the info body. The two-column view renders the
+// body against the playlist column, so key handlers that count wrapped lines
+// must use the same width as the renderer.
+func (m Model) infoWidth() int {
+	if m.layout.twoColumn && m.layout.playlistWidth > 0 {
+		return m.layout.playlistWidth
+	}
+	return m.layout.panelWidth
+}
+
+// infoMinValueWidth keeps a value column readable; below it the value stays
+// on one line and the frame clips it as before.
+const infoMinValueWidth = 12
+
+// infoFieldLines renders one "Label: value" field. A value wider than the body
+// wraps under itself, so long paths and URLs stay readable instead of being
+// clipped at the frame edge. Paths break after a slash where possible.
+func infoFieldLines(label, value string, width int) []string {
+	prefix := "  " + label + ": "
+	prefixWidth := lipgloss.Width(prefix)
+	valueWidth := width - prefixWidth
+	if valueWidth < infoMinValueWidth || lipgloss.Width(value) <= valueWidth {
+		return []string{dimStyle.Render(prefix) + trackStyle.Render(value)}
+	}
+	parts := strings.Split(ansi.Wrap(value, valueWidth, "/"), "\n")
+	lines := make([]string, len(parts))
+	indent := strings.Repeat(" ", prefixWidth)
+	for i, part := range parts {
+		lead := indent
+		if i == 0 {
+			lead = dimStyle.Render(prefix)
+		}
+		lines[i] = lead + trackStyle.Render(part)
 	}
 	return lines
 }
