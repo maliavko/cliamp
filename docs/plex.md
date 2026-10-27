@@ -101,6 +101,11 @@ in another client while the list is open.
 
 While a Plex track plays, cliamp reports its timeline position about every 15 seconds. After at least half of a known-duration track has played, leaving the track records one Plex play and updates Plex history. Short skips do not increment the play count.
 
+With Metadata enabled in the full terminal layout, cliamp can show the
+authenticated Plex cover beside the visualizer without placing the Plex token
+in track metadata or the cache filename. See `cover_art` in
+[configuration](configuration.md#options).
+
 Start cliamp with Plex as the default provider:
 
 ```bash

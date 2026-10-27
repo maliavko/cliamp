@@ -78,9 +78,10 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # drawn. The pane is open unless this is set; Ctrl+B toggles it and saves here.
 # hide_settings_pane = true
 
-# Show read-only metadata below Settings for the highlighted playlist item.
-# Hidden by default; Ctrl+I toggles and saves. Enabling it without room for the
-# section opens full info instead. Closing Settings preserves this preference.
+# Show read-only metadata below Settings and the album cover beside the
+# visualizer. Hidden by default; Ctrl+I toggles both and saves. Enabling it
+# without room for the section opens full info instead. Closing Settings
+# preserves this preference.
 # show_metadata = false
 
 # Show a desktop notification when a new track starts. On Linux this uses the
@@ -109,6 +110,14 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # Ethereal: Flame-style Braille clouds and stars, with no painted background.
 # Keeps Omarchy Ethereal's cosmic palette under any UI theme; no Omarchy needed.
 # visualizer = "Bars"
+
+# Album cover beside the visualizer while Metadata is shown: "auto", "on", or
+# "off" (default: "auto").
+# Auto uses native graphics in Kitty, Ghostty, and WezTerm, and a portable ANSI
+# half-block fallback in other terminals. When space permits, the square cover
+# grows to twice the visualizer height. The pane needs the full 80x24 layout and
+# is hidden in simplified and full-screen visualizer modes.
+# cover_art = "auto"
 
 # Reduce CPU usage by lowering UI cadence and disabling visualization.
 # low_power = false

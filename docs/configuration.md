@@ -89,6 +89,14 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # It keeps its own palette under any UI theme; Omarchy is not required.
 visualizer = "Bars"
 
+# Album cover beside the visualizer when Metadata is open: auto, on, or off
+# (default: auto).
+# Auto uses native terminal graphics in Kitty, Ghostty, and WezTerm, and an
+# ANSI half-block fallback in terminals without graphics support.
+# The square cover grows to twice the visualizer height when space permits.
+# The pane is shown only in the full layout (at least 80x24).
+cover_art = "auto"
+
 # Visualizer volume linking (default: true)
 # When true, bar height follows the current volume level (classic behavior).
 # Set to false to decouple the visualizer from volume — bars stay visible
@@ -225,10 +233,12 @@ more rows for navigation. The visualizer picker keeps its live preview.
 ### Metadata
 
 The read-only `Metadata` section sits below Settings and is hidden by default.
-In the main playback view, `Ctrl+I` toggles it and saves the
+In the main playback view, `Ctrl+I` toggles it together with the album cover
+beside the visualizer, and saves the
 top-level `show_metadata` preference. The default is `show_metadata = false`,
-so the existing layout stays unchanged until you enable it. Metadata is not a
-separate Tab stop, and the toggle is inactive while an input field is active.
+so both stay hidden until you enable it. Metadata is not a separate Tab stop,
+and the toggle is inactive while an input field is active. `cover_art = "off"`
+keeps the cover disabled without affecting Metadata.
 
 `Ctrl+I` requires enhanced keyboard reporting to distinguish it from `Tab`.
 On terminals that send both keys identically, `Tab` navigation takes precedence;
@@ -248,8 +258,9 @@ stream. Live now-playing text appears as Playing only when the selected stream
 is the one playing. Unknown fields are omitted.
 
 In the full two-column layout, opening Metadata can borrow visualizer rows,
-keeping at least one row when the visualizer is enabled. It does not overwrite
-`vis_rows`; closing Metadata restores the configured height as space allows.
+keeping at least four rows when the cover is enabled, or one row when it is
+disabled. It does not overwrite `vis_rows`; closing Metadata restores the
+configured height as space allows.
 It never removes the six direct settings (Source, Volume, EQ, Shuffle, Repeat,
 Speed) to make room. If there is no room for details after those controls, the
 section stays hidden. When fields exceed the section's row budget, it shows

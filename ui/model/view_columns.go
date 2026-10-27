@@ -66,7 +66,10 @@ func (m Model) renderColumnHeaders() string {
 
 // settingsPaneMaxRows is the pane's full height: source, volume, EQ preset,
 // two band rows, shuffle, repeat, speed, network.
-const settingsPaneMaxRows = 9
+const (
+	settingsPaneMaxRows = 9
+	metadataPaneMinRows = 3
+)
 
 // paneRow is one settings-pane line together with how readily it is given up
 // when the body cannot hold every row. Lower ranks are kept longer.

@@ -100,7 +100,7 @@ func (m Model) metadataPaneRows(rows int) int {
 		controls++
 	}
 	available := rows - controls
-	if available < 3 {
+	if available < metadataPaneMinRows {
 		return 0
 	}
 	return min(metadataPaneMaxRows, available)
