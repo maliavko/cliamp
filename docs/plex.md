@@ -32,6 +32,24 @@ This means the same configuration can move between home and work without
 hard-coding a `192.168.x.x` address. Remote playback still requires the Plex
 server to advertise a reachable remote or relay connection.
 
+## Sign out
+
+Run `cliamp setup`, select **Plex Media Server**, and choose **Sign out and
+remove saved credentials**. While `[plex]` holds a token, this is the only
+option: to change the server or the login type, sign out and sign in again.
+
+- After a browser sign-in, cliamp asks Plex to revoke the token, checks that
+  Plex no longer accepts it, and removes `token`, `server_id`, `url`, and
+  `libraries` from `[plex]`.
+- A manual token was copied from Plex Web and belongs to that session, so
+  cliamp does not revoke it. It removes `token` and `libraries` and keeps the
+  server URL.
+
+`client_id` stays, so a later sign-in is the same Plex device. If Plex cannot be reached or still accepts the
+token, cliamp removes it anyway and asks you to remove the device under
+**Authorized Devices** in your Plex account. Restart a running cliamp, which
+keeps the token in memory.
+
 ## Manual token setup
 
 To configure a fixed server URL instead, select the manual option in setup or
@@ -55,6 +73,7 @@ token = "xxxxxxxxxxxxxxxxxxxx"
 client_id = "generated-per-installation-id"
 server_id = "selected-server-id"
 libraries = ["Music", "Jazz"]
+stations = ["Library Radio", "Random Album Radio"]
 ```
 
 | Key | Description |
@@ -64,6 +83,7 @@ libraries = ["Music", "Jazz"]
 | `client_id` | Stable cliamp installation ID written by browser sign-in |
 | `server_id` | Selected Plex Media Server ID written by browser sign-in |
 | `libraries` | Optional comma-separated music library names to load. If omitted, cliamp loads all music libraries. Name matching is case-insensitive. |
+| `stations` | Optional library radio stations to show under **Radio**, by name and in this order. Stations come from the libraries that `libraries` selects. If omitted, every station of those libraries is shown; `[]` hides the section. Name matching is case-insensitive. |
 
 `client_id` and `server_id` enable account discovery. Omit both for a fixed
 manual URL. Do not copy them between installations; rerun browser sign-in on
@@ -73,9 +93,16 @@ the other computer so Plex lists it as a separate authorized device.
 
 After configuration, **Plex** appears in the cliamp provider list.
 
-The provider shows audio playlists and the music library under two headers:
+The provider shows the library radio stations, audio playlists, and the music
+library under three headers:
 
 ```text
+── Radio ──
+Library Radio
+Deep Cuts Radio
+Time Travel Radio
+Random Album Radio
+
 ── Playlists ──
 GOOD
 All Music
@@ -86,6 +113,12 @@ Artist - Album Title (Year)
 ```
 
 Select a playlist or album to load its tracks. Smart playlists are included. They resolve to current server content.
+
+Selecting a station asks the server for a new play queue, as Plexamp does, and
+loads it 30 tracks at a time: when the last loaded track starts, the next 30
+of the same queue are appended, so the station plays on without end. Press
+`Ctrl+R` while the station is open for a fresh selection. The `stations`
+setting picks which stations appear.
 
 Press `Ctrl+R` while an open Plex album or playlist is focused to reload it
 and pick up server-side changes. Album contents are cached for up to five

@@ -568,7 +568,7 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
 		positionSec = m.resume.secs
 	}
 	m.persistPlaybackContext(track, positionSec, time.Now())
-	historyCmd := m.recordListenedTrack(track)
+	historyCmd := tea.Batch(m.recordListenedTrack(track), m.continueQueueCmd(track))
 	m.reconnect.attempts = 0
 	m.reconnect.at = time.Time{}
 	m.reconnect.ytdlLiveDrain = false

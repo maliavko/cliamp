@@ -435,6 +435,16 @@ type TrackPager interface {
 	TracksPage(playlistID string, offset int) (tracks []playlist.Track, next int, err error)
 }
 
+// QueueContinuer is implemented by providers whose lists never end, such as
+// radio stations, that load them in batches. When the last track of a batch
+// starts, the UI asks for the next batch and appends it to the queue.
+// CanContinueAfter must not do I/O; ContinueAfter runs from a command
+// goroutine and returns no tracks when the list has ended.
+type QueueContinuer interface {
+	CanContinueAfter(track playlist.Track) bool
+	ContinueAfter(track playlist.Track) ([]playlist.Track, error)
+}
+
 // ArtworkProvider is implemented by providers whose album art is not known
 // when the track list is built, for example when the cover lives inside the
 // audio file and must be read while it downloads. The UI asks for it when it
