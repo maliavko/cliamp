@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bjarneo/cliamp/applog"
 	"github.com/bjarneo/cliamp/config"
 	"github.com/bjarneo/cliamp/playlist"
 	"github.com/bjarneo/cliamp/provider"
@@ -23,9 +24,16 @@ const (
 	// favorites, playlists, resume state, and IPC responses.
 	TrackURIPrefix   = "plex:track:"
 	prefixPlaylist   = "pl:"
+	prefixStation    = "st:"
 	sectionAlbums    = "Albums"
 	sectionPlaylists = "Playlists"
-	albumCacheTTL    = 5 * time.Minute
+	sectionRadio     = "Radio"
+
+	// stationBatch is how many tracks a station loads at a time. When the
+	// last one starts, the next batch is appended; Ctrl+R on the open
+	// station starts it again for a fresh selection.
+	stationBatch  = 30
+	albumCacheTTL = 5 * time.Minute
 )
 
 type trackCacheEntry struct {
@@ -44,6 +52,7 @@ var (
 	_ provider.ArtworkFetcher      = (*Provider)(nil)
 	_ provider.ListArtworkFetcher  = (*Provider)(nil)
 	_ provider.ListDetailer        = (*Provider)(nil)
+	_ provider.QueueContinuer      = (*Provider)(nil)
 )
 
 // Provider implements playlist.Provider for a Plex Media Server.
@@ -61,7 +70,17 @@ type Provider struct {
 	listArtKeys   map[string]string // PlaylistInfo.ID -> artwork path
 	listDetails   map[string]provider.ListDescription
 	favorites     map[string]bool
+	stations      []string // [plex] stations: nil shows all, empty hides all
+	// stationQueues maps the path of the last track of each station batch
+	// to the server play queue that continues after it.
+	stationQueues map[string]stationQueue
 	now           func() time.Time
+}
+
+// stationQueue is where a station's server play queue continues.
+type stationQueue struct {
+	queueID    int
+	lastItemID int
 }
 
 // newProvider returns a Provider backed by the given Client.
@@ -74,10 +93,14 @@ func NewFromConfig(cfg config.PlexConfig) *Provider {
 	if !cfg.IsSet() {
 		return nil
 	}
+	var p *Provider
 	if cfg.ClientID != "" && cfg.ServerID != "" {
-		return newProvider(NewAccountClient(cfg.URL, cfg.Token, cfg.ClientID, cfg.ServerID, cfg.Libraries...))
+		p = newProvider(NewAccountClient(cfg.URL, cfg.Token, cfg.ClientID, cfg.ServerID, cfg.Libraries...))
+	} else {
+		p = newProvider(NewClient(cfg.URL, cfg.Token, cfg.Libraries...))
 	}
-	return newProvider(NewClient(cfg.URL, cfg.Token, cfg.Libraries...))
+	p.stations = cfg.Stations
+	return p
 }
 
 // Name returns the display name used in the provider selector.
@@ -122,6 +145,7 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	lists = append(p.stationLists(sections, details), lists...)
 	for _, sec := range sections {
 		albums, err := p.client.Albums(sec.Key)
 		if err != nil {
@@ -189,6 +213,14 @@ func (p *Provider) CanRefreshPlaylist(id string) bool {
 // intentionally not cached so smart playlists always reflect current server
 // contents.
 func (p *Provider) Tracks(playlistID string) ([]playlist.Track, error) {
+	if key, ok := strings.CutPrefix(playlistID, prefixStation); ok {
+		// A station is a new play queue each time, never a cached list.
+		page, err := p.client.StationTracks(key, stationBatch)
+		if err != nil {
+			return nil, err
+		}
+		return p.stationBatchTracks(page), nil
+	}
 	isPlaylist := strings.HasPrefix(playlistID, prefixPlaylist)
 
 	p.mu.Lock()
@@ -454,6 +486,96 @@ func (p *Provider) FetchListArtwork(ctx context.Context, list playlist.PlaylistI
 		return nil, fmt.Errorf("plex: %s has no artwork", list.ID)
 	}
 	return p.client.Artwork(ctx, path)
+}
+
+// stationBatchTracks converts one station batch and remembers that its last
+// track continues the server play queue.
+func (p *Provider) stationBatchTracks(page PlayQueuePage) []playlist.Track {
+	tracks := p.convertTracks(page.Tracks, 0)
+	if len(tracks) == 0 || page.LastItemID == 0 {
+		return tracks
+	}
+	p.mu.Lock()
+	if p.stationQueues == nil {
+		p.stationQueues = make(map[string]stationQueue)
+	}
+	p.stationQueues[tracks[len(tracks)-1].Path] = stationQueue{queueID: page.QueueID, lastItemID: page.LastItemID}
+	p.mu.Unlock()
+	return tracks
+}
+
+// CanContinueAfter reports whether track ends a station batch. It does no I/O.
+func (p *Provider) CanContinueAfter(track playlist.Track) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, ok := p.stationQueues[track.Path]
+	return ok
+}
+
+// ContinueAfter returns the next station batch after track, the last track
+// of the batch before. No tracks means the station's queue has ended.
+func (p *Provider) ContinueAfter(track playlist.Track) ([]playlist.Track, error) {
+	p.mu.Lock()
+	queue, ok := p.stationQueues[track.Path]
+	delete(p.stationQueues, track.Path)
+	p.mu.Unlock()
+	if !ok {
+		return nil, nil
+	}
+	page, err := p.client.QueueTracksAfter(queue.queueID, queue.lastItemID, stationBatch)
+	if err != nil {
+		// Keep the queue so a later start of the same track can retry.
+		p.mu.Lock()
+		if p.stationQueues == nil {
+			p.stationQueues = make(map[string]stationQueue)
+		}
+		p.stationQueues[track.Path] = queue
+		p.mu.Unlock()
+		return nil, err
+	}
+	return p.stationBatchTracks(page), nil
+}
+
+// stationLists returns the radio stations of the music sections as browser
+// entries, picked and ordered by the stations setting. A section whose
+// stations cannot be read is skipped: stations are an extra, not the library.
+func (p *Provider) stationLists(sections []Section, details map[string]provider.ListDescription) []playlist.PlaylistInfo {
+	if p.stations != nil && len(p.stations) == 0 {
+		return nil
+	}
+	var lists []playlist.PlaylistInfo
+	for _, sec := range sections {
+		stations, err := p.client.Stations(sec.Key)
+		if err != nil {
+			applog.Warn("plex: %v", err)
+			continue
+		}
+		for _, st := range stations {
+			name := st.Title
+			if len(sections) > 1 {
+				name += " · " + sec.Title
+			}
+			id := prefixStation + st.Key
+			lists = append(lists, playlist.PlaylistInfo{ID: id, Name: name, Section: sectionRadio})
+			details[id] = provider.ListDescription{
+				Title:    st.Title,
+				Subtitle: "Radio station",
+				Lines:    []string{"Plays on without end; Ctrl+R for a fresh selection"},
+			}
+		}
+	}
+	if p.stations == nil {
+		return lists
+	}
+	var picked []playlist.PlaylistInfo
+	for _, want := range p.stations {
+		for _, l := range lists {
+			if strings.EqualFold(details[l.ID].Title, want) {
+				picked = append(picked, l)
+			}
+		}
+	}
+	return picked
 }
 
 // ListDetails describes an album or playlist from the last Playlists call.
