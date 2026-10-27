@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -712,6 +714,143 @@ func TestProviderRestoreTrack(t *testing.T) {
 			}
 			if in.ProviderMeta[provider.MetaPlexID] != "" {
 				t.Fatal("RestoreTrack mutated the caller's metadata map")
+			}
+		})
+	}
+}
+
+func TestProviderListArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/playlists/1/composite/9" || r.URL.Path == "/library/metadata/11/thumb/7":
+			if got := r.Header.Get("X-Plex-Token"); got != "tok" {
+				t.Fatalf("artwork token header = %q", got)
+			}
+			if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+				t.Fatalf("artwork token leaked into query: %q", got)
+			}
+			_, _ = w.Write([]byte("art:" + r.URL.Path))
+		case strings.HasSuffix(r.URL.Path, "/playlists"):
+			w.Write([]byte(`{"MediaContainer":{"Metadata":[
+				{"ratingKey":"1","title":"Mix","playlistType":"audio","leafCount":2,"composite":"/playlists/1/composite/9"}
+			]}}`))
+		case strings.HasSuffix(r.URL.Path, "/library/sections"):
+			w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"3","type":"artist","title":"Music"}]}}`))
+		case strings.HasSuffix(r.URL.Path, "/library/sections/3/all"):
+			w.Write([]byte(`{"MediaContainer":{"totalSize":2,"Metadata":[
+				{"ratingKey":"11","title":"With Art","parentTitle":"A","leafCount":1,"thumb":"/library/metadata/11/thumb/7",
+				 "studio":"Label","originallyAvailableAt":"2013-06-28","Genre":[{"tag":"Rock"}]},
+				{"ratingKey":"12","title":"No Art","parentTitle":"B","leafCount":1}
+			]}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	lists, err := p.Playlists()
+	if err != nil {
+		t.Fatalf("Playlists: %v", err)
+	}
+	byID := make(map[string]playlist.PlaylistInfo)
+	for _, l := range lists {
+		byID[l.ID] = l
+	}
+	tests := []struct {
+		id      string
+		want    bool
+		wantArt string
+	}{
+		{id: prefixPlaylist + "1", want: true, wantArt: "art:/playlists/1/composite/9"},
+		{id: "11", want: true, wantArt: "art:/library/metadata/11/thumb/7"},
+		{id: "12"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			list, ok := byID[tt.id]
+			if !ok {
+				t.Fatalf("list %q missing from %v", tt.id, lists)
+			}
+			if got := p.CanFetchListArtwork(list); got != tt.want {
+				t.Fatalf("CanFetchListArtwork = %v, want %v", got, tt.want)
+			}
+			art, err := p.FetchListArtwork(t.Context(), list)
+			if !tt.want {
+				if err == nil {
+					t.Fatal("FetchListArtwork succeeded without artwork")
+				}
+				return
+			}
+			if err != nil || string(art) != tt.wantArt {
+				t.Fatalf("FetchListArtwork = %q, %v; want %q", art, err, tt.wantArt)
+			}
+		})
+	}
+
+	d, ok := p.ListDetails(byID["11"])
+	if !ok || d.Title != "With Art" || d.Subtitle != "A" || !slices.Equal(d.Lines, []string{"2013-06-28 · Label", "Rock", "1 track"}) {
+		t.Fatalf("album details = %#v, %v", d, ok)
+	}
+	if d, ok := p.ListDetails(byID[prefixPlaylist+"1"]); !ok || d.Title != "Mix" {
+		t.Fatalf("playlist details = %#v, %v", d, ok)
+	}
+
+	p.Refresh()
+	if _, ok := p.ListDetails(byID["11"]); ok {
+		t.Fatal("Refresh kept stale list details")
+	}
+	if p.CanFetchListArtwork(byID["11"]) {
+		t.Fatal("Refresh kept stale list artwork")
+	}
+}
+
+func TestListDescriptions(t *testing.T) {
+	feb2026 := time.Date(2026, 2, 19, 12, 0, 0, 0, time.Local).Unix()
+	tests := []struct {
+		name string
+		got  provider.ListDescription
+		want provider.ListDescription
+	}{
+		{
+			name: "full album",
+			got: albumDescription(Album{
+				Title: "In Darkness", ArtistName: "Agathodaimon", Year: 2013, Released: "2013-06-28",
+				Studio: "Massacre Records", Genres: []string{"Black Metal", "Rock"}, TrackCount: 9,
+				ViewCount: 1, LastViewed: feb2026,
+			}),
+			want: provider.ListDescription{
+				Title: "In Darkness", Subtitle: "Agathodaimon",
+				Lines: []string{"2013-06-28 · Massacre Records", "Black Metal, Rock", "9 tracks", "Played once · Feb 2026"},
+			},
+		},
+		{
+			name: "sparse album",
+			got:  albumDescription(Album{Title: "Demo", ArtistName: "Band", Year: 1999, TrackCount: 1}),
+			want: provider.ListDescription{Title: "Demo", Subtitle: "Band", Lines: []string{"1999", "1 track"}},
+		},
+		{
+			name: "smart playlist",
+			got: playlistDescription(Playlist{
+				Title: "❤️ Tracks", Smart: true, TrackCount: 2543, DurationSecs: 693572,
+				ViewCount: 20, LastViewed: feb2026,
+			}),
+			want: provider.ListDescription{
+				Title: "❤️ Tracks", Subtitle: "Smart playlist",
+				Lines: []string{"2543 tracks · 192 h 40 min", "Played 20 times · Feb 2026"},
+			},
+		},
+		{
+			name: "short playlist",
+			got:  playlistDescription(Playlist{Title: "Mix", TrackCount: 3, DurationSecs: 600}),
+			want: provider.ListDescription{Title: "Mix", Subtitle: "Playlist", Lines: []string{"3 tracks · 10 min"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !reflect.DeepEqual(tt.got, tt.want) {
+				t.Fatalf("description = %#v\nwant %#v", tt.got, tt.want)
 			}
 		})
 	}

@@ -108,7 +108,13 @@ type Album struct {
 	Title      string
 	ArtistName string // parentTitle in the Plex API
 	Year       int
-	TrackCount int // leafCount
+	TrackCount int    // leafCount
+	Thumb      string // authenticated artwork path
+	Released   string // originallyAvailableAt, e.g. "2013-06-28"
+	Studio     string // record label
+	Genres     []string
+	ViewCount  int
+	LastViewed int64 // lastViewedAt, Unix seconds
 }
 
 // Track represents a Plex track with metadata and its first streamable Part.
@@ -132,6 +138,24 @@ type Playlist struct {
 	TrackCount   int // leafCount
 	DurationSecs int // duration, converted from milliseconds
 	Smart        bool
+	Thumb        string // authenticated artwork path, the playlist's composite
+	ViewCount    int
+	LastViewed   int64 // lastViewedAt, Unix seconds
+}
+
+// plexTag is one entry of a Plex tag list such as Genre.
+type plexTag struct {
+	Tag string `json:"tag"`
+}
+
+func tagNames(tags []plexTag) []string {
+	names := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t.Tag != "" {
+			names = append(names, t.Tag)
+		}
+	}
+	return names
 }
 
 // get issues an authenticated GET request and decodes the JSON response into result.
@@ -366,11 +390,17 @@ func (c *Client) Albums(sectionKey string) ([]Album, error) {
 			// distinguishable from one that reports zero.
 			TotalSize *int `json:"totalSize"`
 			Metadata  []struct {
-				RatingKey   string `json:"ratingKey"`
-				Title       string `json:"title"`
-				ParentTitle string `json:"parentTitle"` // artist name
-				Year        int    `json:"year"`
-				LeafCount   int    `json:"leafCount"` // track count
+				RatingKey   string    `json:"ratingKey"`
+				Title       string    `json:"title"`
+				ParentTitle string    `json:"parentTitle"` // artist name
+				Year        int       `json:"year"`
+				LeafCount   int       `json:"leafCount"` // track count
+				Thumb       string    `json:"thumb"`
+				Released    string    `json:"originallyAvailableAt"`
+				Studio      string    `json:"studio"`
+				ViewCount   int       `json:"viewCount"`
+				LastViewed  int64     `json:"lastViewedAt"`
+				Genre       []plexTag `json:"Genre"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
 	}
@@ -403,6 +433,12 @@ func (c *Client) Albums(sectionKey string) ([]Album, error) {
 				ArtistName: m.ParentTitle,
 				Year:       m.Year,
 				TrackCount: m.LeafCount,
+				Thumb:      m.Thumb,
+				Released:   m.Released,
+				Studio:     m.Studio,
+				Genres:     tagNames(m.Genre),
+				ViewCount:  m.ViewCount,
+				LastViewed: m.LastViewed,
 			})
 		}
 		// Advance by what the server actually returned, not by what was
@@ -433,6 +469,9 @@ func (c *Client) Playlists() ([]Playlist, error) {
 				PlaylistType string `json:"playlistType"`
 				LeafCount    int    `json:"leafCount"`
 				Duration     int    `json:"duration"`
+				Composite    string `json:"composite"`
+				ViewCount    int    `json:"viewCount"`
+				LastViewed   int64  `json:"lastViewedAt"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
 	}
@@ -451,6 +490,9 @@ func (c *Client) Playlists() ([]Playlist, error) {
 			TrackCount:   m.LeafCount,
 			DurationSecs: m.Duration / 1000,
 			Smart:        m.Smart,
+			Thumb:        m.Composite,
+			ViewCount:    m.ViewCount,
+			LastViewed:   m.LastViewed,
 		})
 	}
 	return playlists, nil
