@@ -365,6 +365,9 @@ func New(send func(tea.Msg)) (*Service, error) {
 	return svc, nil
 }
 
+// SetDesktopNotifications is reserved for the platform notification backend.
+func (s *Service) SetDesktopNotifications(bool) {}
+
 func (s *Service) dispatch(msg tea.Msg) {
 	if s == nil {
 		return

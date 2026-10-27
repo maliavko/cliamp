@@ -32,6 +32,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.BitDepth != 16 {
 		t.Errorf("BitDepth = %d, want 16", cfg.BitDepth)
 	}
+	if !cfg.DesktopNotifications {
+		t.Error("DesktopNotifications should be true by default")
+	}
 	if cfg.CoverArt != "auto" {
 		t.Errorf("CoverArt = %q, want auto", cfg.CoverArt)
 	}

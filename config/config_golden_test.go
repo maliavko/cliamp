@@ -179,6 +179,7 @@ simplified = true
 hide_help_bar = true
 hide_settings_pane = true
 show_metadata = true
+desktop_notifications = false
 expanded = true
 audio_device = "USB DAC #2"
 initial_directory = ~/Music#Mixes
@@ -318,6 +319,7 @@ func TestLoadGolden(t *testing.T) {
 	topWant.HideHelpBar = true
 	topWant.HideSettingsPane = true
 	topWant.ShowMetadata = true
+	topWant.DesktopNotifications = false
 	topWant.Expanded = true
 	topWant.AudioDevice = "USB DAC #2"
 	topWant.InitialDirectory = "~/Music#Mixes"
