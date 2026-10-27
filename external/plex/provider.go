@@ -145,7 +145,8 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	lists = append(p.stationLists(sections, details), lists...)
+	// Playlists, then radio stations, then albums.
+	lists = append(lists, p.stationLists(sections, details)...)
 	for _, sec := range sections {
 		albums, err := p.client.Albums(sec.Key)
 		if err != nil {

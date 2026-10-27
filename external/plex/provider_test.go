@@ -293,7 +293,7 @@ func TestProviderResolveSourceRestoresAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSource: %v", err)
 	}
-	want := srv.URL + "/library/parts/1/111/file.flac?X-Plex-Token=tok"
+	want := srv.URL + "/library/parts/1/111/file.flac?download=1&X-Plex-Token=tok"
 	if got != want {
 		t.Fatalf("ResolveSource = %q, want %q", got, want)
 	}
@@ -868,7 +868,7 @@ func stationServer(t *testing.T, hubStatus int) (*httptest.Server, *int) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/playlists":
-			w.Write([]byte(`{"MediaContainer":{"Metadata":[]}}`))
+			w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"5","title":"Mix","playlistType":"audio","leafCount":2}]}}`))
 		case r.URL.Path == "/library/sections":
 			w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"3","type":"artist","title":"Music"}]}}`))
 		case r.URL.Path == "/library/sections/3/all":
@@ -961,11 +961,19 @@ func TestProviderStationLists(t *testing.T) {
 			if !slices.Equal(got, tt.want) {
 				t.Fatalf("stations = %v, want %v", got, tt.want)
 			}
-			if lists[len(lists)-1].ID != "1" {
-				t.Fatalf("album missing after stations: %v", lists)
+			// Playlists, then radio stations, then albums.
+			var sections []string
+			for _, l := range lists {
+				if len(sections) == 0 || sections[len(sections)-1] != l.Section {
+					sections = append(sections, l.Section)
+				}
 			}
-			if len(got) > 0 && lists[0].Section != sectionRadio {
-				t.Fatalf("stations are not first: %v", lists)
+			want := []string{sectionPlaylists, sectionRadio, sectionAlbums}
+			if len(got) == 0 {
+				want = []string{sectionPlaylists, sectionAlbums}
+			}
+			if !slices.Equal(sections, want) {
+				t.Fatalf("section order = %v, want %v", sections, want)
 			}
 		})
 	}
@@ -1043,8 +1051,10 @@ func TestProviderStationsFollowLibraries(t *testing.T) {
 			if !slices.Equal(got, tt.want) {
 				t.Fatalf("stations = %v, want %v", got, tt.want)
 			}
-			if tt.libraries != nil && !strings.Contains(lists[0].ID, "/sections/4/") {
-				t.Fatalf("station %q is not from the selected library", lists[0].ID)
+			for _, l := range lists {
+				if tt.libraries != nil && l.Section == sectionRadio && !strings.Contains(l.ID, "/sections/4/") {
+					t.Fatalf("station %q is not from the selected library", l.ID)
+				}
 			}
 		})
 	}
