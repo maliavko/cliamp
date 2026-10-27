@@ -247,3 +247,114 @@ func TestArtworkURLHidesRemoteSourceUntilCached(t *testing.T) {
 		t.Fatalf("cached artworkURL = %q, want %q", got, m.cover.local)
 	}
 }
+
+func writeCoverPNG(t *testing.T, name string, width, height int) string {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for x := range width {
+		for y := range height {
+			img.Set(x, y, color.NRGBA{R: 255, A: 255})
+		}
+	}
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, img); err != nil {
+		t.Fatalf("encode cover: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, raw.Bytes(), 0o644); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+}
+
+func TestCoverColsKeepsAspect(t *testing.T) {
+	tests := []struct {
+		name                 string
+		rows                 int
+		aspect, cellW, cellH float64
+		want                 int
+	}{
+		{name: "square in 1:2 cells", rows: 6, aspect: 1, cellW: 10, cellH: 20, want: 12},
+		{name: "wide image", rows: 6, aspect: 2, cellW: 10, cellH: 20, want: 24},
+		{name: "tall image", rows: 6, aspect: 0.5, cellW: 10, cellH: 20, want: 6},
+		{name: "unknown cell size", rows: 5, aspect: 1, want: 10},
+		{name: "never zero", rows: 1, aspect: 0.01, cellW: 10, cellH: 20, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := coverCols(tt.rows, tt.aspect, tt.cellW, tt.cellH); got != tt.want {
+				t.Fatalf("coverCols = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInfoCoverShowsHighlightedTrack(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	m := coverTestModel(t, 120, 30)
+	playing := playlist.Track{Path: "playing.mp3", Title: "Playing", AlbumArtURL: writeCoverPNG(t, "playing.png", 4, 4)}
+	selected := playlist.Track{
+		Path: "/music/selected.mp3", Title: "Selected", Artist: "Artist", Album: "Album",
+		Genre: "Genre", Year: 2026, TrackNumber: 3,
+		AlbumArtURL: writeCoverPNG(t, "selected.png", 8, 4),
+	}
+	m.playlist.Replace([]playlist.Track{playing, selected})
+	m.plCursor = 1
+	m.info.visible = true
+
+	load := m.ensureInfoCover()
+	if load == nil || !m.infoCover.loading {
+		t.Fatal("ensureInfoCover did not load the highlighted track's cover")
+	}
+	loaded, ok := load().(coverLoadedMsg)
+	if !ok || loaded.slot != coverSlotInfo {
+		t.Fatalf("load returned %#v, want an info-slot coverLoadedMsg", loaded)
+	}
+	m.handleCoverLoaded(loaded)
+	if m.infoCover.aspect != 2 {
+		t.Fatalf("info cover aspect = %v, want 2 for an 8x4 image", m.infoCover.aspect)
+	}
+
+	cols, rows, _, visible := m.infoCoverGeometry()
+	if !visible {
+		t.Fatal("info cover geometry is hidden in a wide terminal")
+	}
+	if fields := len(m.infoLines()); rows != min(fields, m.effectivePlaylistVisible()) {
+		t.Fatalf("cover rows = %d, want the %d field lines", rows, fields)
+	}
+	cellW, cellH := m.cellSize()
+	if want := coverCols(rows, 2, cellW, cellH); cols != want {
+		t.Fatalf("cover cols = %d, want %d for a 2:1 image", cols, want)
+	}
+
+	render := m.ensureInfoCover()
+	if render == nil || !m.infoCover.rendering {
+		t.Fatal("ensureInfoCover did not render the loaded cover")
+	}
+	m.handleCoverRendered(render().(coverRenderedMsg))
+	body := m.renderInfoBody()
+	if !strings.Contains(body, "▀") || !strings.Contains(body, "Selected") {
+		t.Fatalf("info body lacks the cover or the fields:\n%s", body)
+	}
+	if m.renderCover() != "" {
+		t.Fatal("info cover leaked into the playing-track pane")
+	}
+
+	m.info.visible = false
+	if cmd := m.ensureInfoCover(); cmd != nil || m.infoCover.key != "" || m.infoCover.render() != "" {
+		t.Fatal("closing the info overlay kept its cover")
+	}
+}
+
+func TestInfoCoverHiddenWhenTooNarrow(t *testing.T) {
+	m := coverTestModel(t, 40, 30)
+	m.playlist.Replace([]playlist.Track{{Path: "a.mp3", Title: "A", Artist: "B", Album: "C", Genre: "D", Year: 1, TrackNumber: 1}})
+	m.info.visible = true
+	m.infoCover = coverState{key: "k", local: "file:///cover.png", aspect: 1}
+	if _, _, _, visible := m.infoCoverGeometry(); visible {
+		t.Fatal("info cover shown in a body too narrow for the fields")
+	}
+	if got, want := m.infoTextWidth(), m.infoWidth(); got != want {
+		t.Fatalf("text width = %d, want full body %d without a cover", got, want)
+	}
+}

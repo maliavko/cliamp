@@ -365,14 +365,37 @@ func clampedScroll(scroll, cursor, count, budget int) int {
 
 func (m Model) renderInfoBody() string {
 	budget := m.effectivePlaylistVisible()
-	lines := m.infoLines()
+	cols, rows, _, coverVisible := m.infoCoverGeometry()
+	width := m.infoWidth()
+	if coverVisible {
+		width -= infoCoverMargin + cols + infoCoverGap
+	}
+	lines := m.infoLinesAt(width)
 	start := min(m.info.scroll, max(0, len(lines)-budget))
 	end := min(start+budget, len(lines))
-	return bodyLines(lines[start:end], budget)
+	text := bodyLines(lines[start:end], budget)
+	if !coverVisible || budget <= 0 {
+		return text
+	}
+	// The cover stays in place while the fields scroll beside it. Until the
+	// render arrives its column is blank, so the text does not reflow.
+	cover := ""
+	if m.infoCover.cols == cols && m.infoCover.rows == rows {
+		cover = m.infoCover.render()
+	}
+	return joinPanesRow(
+		[]string{"", cover, "", text},
+		[]int{infoCoverMargin, cols, infoCoverGap, width},
+		budget,
+	)
 }
 
+// infoLines returns the field lines wrapped to the width the renderer uses.
 func (m Model) infoLines() []string {
-	width := m.infoWidth()
+	return m.infoLinesAt(m.infoTextWidth())
+}
+
+func (m Model) infoLinesAt(width int) []string {
 	var lines []string
 	for _, field := range m.metadataFields() {
 		lines = append(lines, infoFieldLines(field.label, field.value, width)...)

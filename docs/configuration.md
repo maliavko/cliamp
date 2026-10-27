@@ -95,6 +95,8 @@ visualizer = "Bars"
 # ANSI half-block fallback in terminals without graphics support.
 # The square cover grows to twice the visualizer height when space permits.
 # The pane is shown only in the full layout (at least 80x24).
+# The track info overlay (i) also shows the highlighted item's cover beside
+# its fields, as tall as the fields and in the image's own proportions.
 cover_art = "auto"
 
 # Visualizer volume linking (default: true)
@@ -232,7 +234,10 @@ beside the visualizer, and saves the
 top-level `show_metadata` preference. The default is `show_metadata = false`,
 so both stay hidden until you enable it. Metadata is not a separate Tab stop,
 and the toggle is inactive while an input field is active. `cover_art = "off"`
-keeps the cover disabled without affecting Metadata.
+keeps the cover disabled without affecting Metadata. The full info overlay
+(`i`) shows the highlighted item's cover on the left of its fields when the
+body is wide enough; its height follows the number of field lines and its
+width keeps the image's proportions.
 
 `Ctrl+I` requires enhanced keyboard reporting to distinguish it from `Tab`.
 On terminals that send both keys identically, `Tab` navigation takes precedence;
