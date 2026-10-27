@@ -1,12 +1,17 @@
 package plex
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bjarneo/cliamp/config"
+	"github.com/bjarneo/cliamp/playlist"
+	"github.com/bjarneo/cliamp/provider"
 )
 
 // sectionsHandler returns a handler that serves a single music section
@@ -22,7 +27,7 @@ func sectionsHandler(t *testing.T) http.HandlerFunc {
 					"Metadata": [
 						{
 							"ratingKey":"300","title":"Highway to Hell","grandparentTitle":"AC/DC",
-							"parentTitle":"Highway to Hell","year":1979,"index":1,"duration":208000,
+							"parentTitle":"Highway to Hell","year":1979,"index":1,"duration":208000,"userRating":10,
 							"Media":[{"Part":[{"key":"/library/parts/3/333/HighwayToHell.flac"}]}]
 						}
 					]
@@ -54,7 +59,7 @@ func sectionsHandler(t *testing.T) http.HandlerFunc {
 				"MediaContainer": {
 					"Metadata": [
 						{
-							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis",
+							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis","thumb":"/library/metadata/200/thumb/1",
 							"parentTitle":"Kind of Blue","year":1959,"index":1,"duration":565000,
 							"Media":[{"Part":[{"key":"/library/parts/1/111/SoWhat.flac"}]}]
 						}
@@ -214,20 +219,20 @@ func TestProvider_Tracks(t *testing.T) {
 	if tr.TrackNumber != 1 {
 		t.Errorf("TrackNumber = %d, want 1", tr.TrackNumber)
 	}
+	if got := p.artKeys["200"]; got != "/library/metadata/200/thumb/1" {
+		t.Errorf("artwork key = %q", got)
+	}
 	if tr.DurationSecs != 565 {
 		t.Errorf("DurationSecs = %d, want 565", tr.DurationSecs)
 	}
 	if !tr.Stream {
 		t.Error("Stream = false, want true")
 	}
-	if !strings.HasPrefix(tr.Path, srv.URL) {
-		t.Errorf("Path %q does not start with server URL", tr.Path)
+	if tr.Path != TrackURIPrefix+"200" {
+		t.Errorf("Path = %q, want token-free Plex URI", tr.Path)
 	}
-	if !strings.Contains(tr.Path, "X-Plex-Token=tok") {
-		t.Errorf("Path %q missing X-Plex-Token", tr.Path)
-	}
-	if !strings.Contains(tr.Path, "/library/parts/1/111/SoWhat.flac") {
-		t.Errorf("Path %q missing part key", tr.Path)
+	if tr.Meta(provider.MetaPlexID) != "200" {
+		t.Errorf("Plex metadata ID = %q, want 200", tr.Meta(provider.MetaPlexID))
 	}
 }
 
@@ -260,11 +265,108 @@ func TestProvider_Tracks_Playlist(t *testing.T) {
 	if !tr.Stream {
 		t.Error("Stream = false, want true")
 	}
-	if !strings.Contains(tr.Path, "X-Plex-Token=tok") {
-		t.Errorf("Path %q missing X-Plex-Token", tr.Path)
+	if tr.Path != TrackURIPrefix+"300" {
+		t.Errorf("Path = %q, want token-free Plex URI", tr.Path)
 	}
-	if !strings.Contains(tr.Path, "/library/parts/3/333/HighwayToHell.flac") {
-		t.Errorf("Path %q missing part key", tr.Path)
+	if favorite, known := p.FavoriteState(tr); !favorite || !known {
+		t.Error("Plex userRating=10 was not exposed as a favorite")
+	}
+}
+
+func TestProviderResolveSourceRestoresAfterRestart(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/metadata/200" {
+			t.Fatalf("path = %q, want metadata lookup", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"200","userRating":10,"Media":[{"Part":[{"key":"/library/parts/1/111/file.flac"}]}]}]}}`))
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	got, err := p.ResolveSource(TrackURIPrefix + "200")
+	if err != nil {
+		t.Fatalf("ResolveSource: %v", err)
+	}
+	want := srv.URL + "/library/parts/1/111/file.flac?X-Plex-Token=tok"
+	if got != want {
+		t.Fatalf("ResolveSource = %q, want %q", got, want)
+	}
+	track := playlist.Track{Path: TrackURIPrefix + "200"}
+	if favorite, known := p.FavoriteState(track); !favorite || !known {
+		t.Fatalf("restored favorite = (%v, %v), want true, true", favorite, known)
+	}
+}
+
+func TestProviderFavorites(t *testing.T) {
+	var gotRating string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/:/rate" {
+			t.Fatalf("path = %q, want /:/rate", r.URL.Path)
+		}
+		gotRating = r.URL.Query().Get("rating")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	track := playlist.Track{Path: TrackURIPrefix + "200"}
+	if !p.CanFavoriteTrack(track) {
+		t.Fatal("CanFavoriteTrack = false")
+	}
+	if err := p.SetTrackFavorite(context.Background(), track, true); err != nil {
+		t.Fatalf("SetTrackFavorite: %v", err)
+	}
+	if gotRating != "10" {
+		t.Fatalf("rating = %q, want 10", gotRating)
+	}
+	if favorite, known := p.FavoriteState(track); !favorite || !known {
+		t.Fatal("successful rating did not update the in-memory favorite state")
+	}
+	if err := p.SetTrackFavorite(context.Background(), track, false); err != nil {
+		t.Fatalf("SetTrackFavorite(false): %v", err)
+	}
+	favorite, known := p.FavoriteState(track)
+	if gotRating != "0" || favorite || !known {
+		t.Fatalf("cleared rating = %q, state = (%v, %v); want 0, false, true", gotRating, favorite, known)
+	}
+}
+
+func TestProviderPlaybackReporting(t *testing.T) {
+	var timelineStates []string
+	scrobbleCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/:/timeline":
+			timelineStates = append(timelineStates, r.URL.Query().Get("state"))
+			if got := r.URL.Query().Get("duration"); got != "120000" {
+				t.Errorf("timeline duration = %q, want 120000", got)
+			}
+		case "/:/scrobble":
+			scrobbleCount++
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	track := playlist.Track{Path: TrackURIPrefix + "200", DurationSecs: 120}
+	if err := p.ReportNowPlaying(track, 2*time.Second, true); err != nil {
+		t.Fatalf("ReportNowPlaying: %v", err)
+	}
+	if err := p.ReportProgress(track, 30*time.Second); err != nil {
+		t.Fatalf("ReportProgress: %v", err)
+	}
+	if err := p.ReportScrobble(track, 70*time.Second, 2*time.Minute, true); err != nil {
+		t.Fatalf("ReportScrobble: %v", err)
+	}
+	if got := strings.Join(timelineStates, ","); got != "playing,playing,stopped" {
+		t.Fatalf("timeline states = %q", got)
+	}
+	if scrobbleCount != 1 {
+		t.Fatalf("scrobble count = %d, want 1", scrobbleCount)
 	}
 }
 
@@ -323,6 +425,44 @@ func TestProvider_Tracks_SkipsMissingPart(t *testing.T) {
 	}
 }
 
+func TestProviderFetchArtworkKeepsTokenOffTrack(t *testing.T) {
+	want := "cover bytes"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/library/metadata/10/thumb/20" {
+			if got := r.Header.Get("X-Plex-Token"); got != "secret-token" {
+				t.Fatalf("artwork token header = %q", got)
+			}
+			if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+				t.Fatalf("artwork token leaked into query: %q", got)
+			}
+			_, _ = w.Write([]byte(want))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"1","title":"Song","thumb":"/library/metadata/10/thumb/20","Media":[{"Part":[{"key":"/library/parts/1/file.flac"}]}]}]}}`))
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "secret-token"))
+	tracks, err := p.Tracks("10")
+	if err != nil {
+		t.Fatalf("Tracks: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].AlbumArtURL != "" {
+		t.Fatalf("playlist track persisted authenticated art URL %q", tracks[0].AlbumArtURL)
+	}
+	art, err := p.FetchArtwork(t.Context(), tracks[0])
+	if err != nil {
+		t.Fatalf("FetchArtwork: %v", err)
+	}
+	if string(art) != want {
+		t.Fatalf("artwork = %q, want %q", art, want)
+	}
+}
+
 func TestProvider_Tracks_Cached(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +481,88 @@ func TestProvider_Tracks_Cached(t *testing.T) {
 	}
 	if callCount != 1 {
 		t.Errorf("expected children endpoint called once, called %d times", callCount)
+	}
+}
+
+func TestProvider_Tracks_AlbumCacheTTL(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"1","title":"T%d","Media":[{"Part":[{"key":"/p/1/f.mp3"}]}]}]}}`, callCount)
+	}))
+	defer srv.Close()
+
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	p := newProvider(NewClient(srv.URL, "tok"))
+	p.now = func() time.Time { return now }
+	if _, err := p.Tracks("99"); err != nil {
+		t.Fatalf("first Tracks: %v", err)
+	}
+
+	now = now.Add(albumCacheTTL - time.Second)
+	if _, err := p.Tracks("99"); err != nil {
+		t.Fatalf("cached Tracks: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("request count before TTL = %d, want 1", callCount)
+	}
+
+	now = now.Add(time.Second)
+	refreshed, err := p.Tracks("99")
+	if err != nil {
+		t.Fatalf("expired Tracks: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("request count after TTL = %d, want 2", callCount)
+	}
+	if got := refreshed[0].Title; got != "T2" {
+		t.Fatalf("title after TTL = %q, want T2", got)
+	}
+}
+
+func TestProviderRefreshReloadsOpenList(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"1","title":"T%d","Media":[{"Part":[{"key":"/p/1/f.mp3"}]}]}]}}`, callCount)
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	if _, err := p.Tracks("99"); err != nil {
+		t.Fatalf("first Tracks: %v", err)
+	}
+	p.Refresh()
+	refreshed, err := p.Tracks("99")
+	if err != nil {
+		t.Fatalf("Tracks after Refresh: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("request count after Refresh = %d, want 2", callCount)
+	}
+	if got := refreshed[0].Title; got != "T2" {
+		t.Fatalf("title after Refresh = %q, want T2", got)
+	}
+}
+
+func TestProviderCanRefreshPlaylist(t *testing.T) {
+	p := newProvider(NewClient("http://localhost:32400", "tok"))
+	for _, tt := range []struct {
+		id   string
+		want bool
+	}{
+		{id: "99", want: true},
+		{id: "album_key-1", want: true},
+		{id: "pl:24872", want: true},
+		{id: "", want: false},
+		{id: "pl:", want: false},
+		{id: "browse/albums", want: false},
+	} {
+		if got := p.CanRefreshPlaylist(tt.id); got != tt.want {
+			t.Errorf("CanRefreshPlaylist(%q) = %v, want %v", tt.id, got, tt.want)
+		}
 	}
 }
 
@@ -379,6 +601,18 @@ func TestNewFromConfig_OK(t *testing.T) {
 	cfg := config.PlexConfig{URL: "http://localhost:32400", Token: "mytoken"}
 	if p := NewFromConfig(cfg); p == nil {
 		t.Error("NewFromConfig() returned nil for valid config")
+	}
+}
+
+func TestNewFromConfig_Account(t *testing.T) {
+	cfg := config.PlexConfig{
+		URL:      "https://old.plex.direct:32400",
+		Token:    "account-token",
+		ClientID: "client-1",
+		ServerID: "server-1",
+	}
+	if p := NewFromConfig(cfg); p == nil || p.client.account == nil {
+		t.Fatal("NewFromConfig() did not create an account-backed client")
 	}
 }
 

@@ -321,9 +321,8 @@ type CustomStreamer interface {
 }
 
 // TrackFavoriter is implemented by providers that keep a favorite state for
-// tracks on their own service, such as liked or starred songs. The local
-// favorites store stays the source of truth. The UI copies each change to the
-// provider that owns the track.
+// tracks on their own service, such as liked or starred songs. The UI copies
+// each change to the provider that owns the track.
 type TrackFavoriter interface {
 	// CanFavoriteTrack reports whether track belongs to this provider. It must
 	// not do I/O because the UI calls it on the Update goroutine.
@@ -331,6 +330,15 @@ type TrackFavoriter interface {
 	// SetTrackFavorite sets or clears the favorite state of track on the
 	// provider's service.
 	SetTrackFavorite(ctx context.Context, track playlist.Track, favorite bool) error
+}
+
+// TrackFavoriteState is implemented by providers whose own favorite state is
+// authoritative for their tracks. Local favorites are ignored for a track
+// claimed by this interface. Its methods must not do I/O because list rows and
+// IPC snapshots call them on the Update goroutine.
+type TrackFavoriteState interface {
+	CanFavoriteTrack(track playlist.Track) bool
+	FavoriteState(track playlist.Track) (favorite, known bool)
 }
 
 // FavoriteToggler is implemented by providers that support marking items
@@ -435,4 +443,13 @@ type TrackPager interface {
 type ArtworkProvider interface {
 	// ArtworkFor returns a URL for track's cover, or false when unavailable.
 	ArtworkFor(track playlist.Track) (url string, ok bool)
+}
+
+// ArtworkFetcher is implemented by providers whose artwork requires an
+// authenticated request. FetchArtwork runs from a command goroutine, never
+// the Update loop. The returned bytes are cached by the caller and only the
+// resulting local file URL is exposed to UI and media-control consumers.
+type ArtworkFetcher interface {
+	CanFetchArtwork(track playlist.Track) bool
+	FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error)
 }

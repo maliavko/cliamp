@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,9 +10,111 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bjarneo/cliamp/internal/httpclient"
 )
+
+func TestSetRating(t *testing.T) {
+	for _, rating := range []float64{10, 0} {
+		t.Run(fmt.Sprintf("rating_%g", rating), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPut || r.URL.Path != "/:/rate" {
+					t.Fatalf("request = %s %s, want PUT /:/rate", r.Method, r.URL.Path)
+				}
+				if got := r.URL.Query().Get("key"); got != "track-42" {
+					t.Errorf("key = %q, want track-42", got)
+				}
+				if got := r.URL.Query().Get("identifier"); got != "com.plexapp.plugins.library" {
+					t.Errorf("identifier = %q", got)
+				}
+				if got := r.Header.Get("X-Plex-Token"); got != "test-token" {
+					t.Errorf("X-Plex-Token = %q", got)
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			if err := newTestClient(srv).SetRating(context.Background(), "track-42", rating); err != nil {
+				t.Fatalf("SetRating(%g): %v", rating, err)
+			}
+		})
+	}
+}
+
+func TestArtworkUsesTokenHeader(t *testing.T) {
+	want := []byte("cover")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/metadata/42/thumb/1" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Plex-Token"); got != "test-token" {
+			t.Fatalf("X-Plex-Token = %q", got)
+		}
+		if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+			t.Fatalf("token leaked into query: %q", got)
+		}
+		_, _ = w.Write(want)
+	}))
+	defer srv.Close()
+
+	got, err := newTestClient(srv).Artwork(t.Context(), "/library/metadata/42/thumb/1")
+	if err != nil {
+		t.Fatalf("Artwork: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("Artwork = %q, want %q", got, want)
+	}
+}
+
+func TestArtworkRejectsAbsoluteURL(t *testing.T) {
+	if _, err := NewClient("http://localhost:32400", "token").Artwork(t.Context(), "https://example.com/cover"); err == nil {
+		t.Fatal("Artwork accepted an absolute URL")
+	}
+}
+
+func TestReportTimeline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/:/timeline" {
+			t.Fatalf("request = %s %s, want POST /:/timeline", r.Method, r.URL.Path)
+		}
+		want := map[string]string{
+			"key":       "/library/metadata/track-42",
+			"ratingKey": "track-42",
+			"state":     "playing",
+			"time":      "1234",
+			"duration":  "180000",
+		}
+		for key, value := range want {
+			if got := r.URL.Query().Get(key); got != value {
+				t.Errorf("%s = %q, want %q", key, got, value)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	if err := newTestClient(srv).ReportTimeline(t.Context(), "track-42", "playing", 1234*time.Millisecond, 3*time.Minute); err != nil {
+		t.Fatalf("ReportTimeline: %v", err)
+	}
+}
+
+func TestScrobble(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/:/scrobble" {
+			t.Fatalf("request = %s %s, want PUT /:/scrobble", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("key"); got != "track-42" {
+			t.Errorf("key = %q, want track-42", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	if err := newTestClient(srv).Scrobble(t.Context(), "track-42"); err != nil {
+		t.Fatalf("Scrobble: %v", err)
+	}
+}
 
 // newTestClient returns a Client pointed at the given test server.
 func newTestClient(srv *httptest.Server) *Client {
@@ -542,6 +645,7 @@ func TestTracks_MapsAllFields(t *testing.T) {
 						"year": 1959,
 						"index": 1,
 						"duration": 565000,
+						"userRating": 10,
 						"Media": [{"Part": [{"key": "/library/parts/100/111/So_What.flac"}]}]
 					},
 					{
@@ -589,6 +693,9 @@ func TestTracks_MapsAllFields(t *testing.T) {
 	if tr.Duration != 565000 {
 		t.Errorf("Duration: got %d, want 565000", tr.Duration)
 	}
+	if tr.UserRating != 10 {
+		t.Errorf("UserRating: got %g, want 10", tr.UserRating)
+	}
 	if tr.PartKey != "/library/parts/100/111/So_What.flac" {
 		t.Errorf("PartKey: got %q, want /library/parts/100/111/So_What.flac", tr.PartKey)
 	}
@@ -633,6 +740,25 @@ func TestStreamURL_TokenEncoded(t *testing.T) {
 	got := c.StreamURL("/library/parts/1/2/file.mp3")
 	if !strings.Contains(got, "X-Plex-Token=tok+en%2Bspecial") {
 		t.Errorf("StreamURL token not URL-encoded: %q", got)
+	}
+}
+
+func TestTrackLoadsOneMetadataItem(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/metadata/42" {
+			t.Fatalf("path = %q, want /library/metadata/42", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"42","title":"Song","Media":[{"Part":[{"key":"/library/parts/4/file.flac"}]}]}]}}`))
+	}))
+	defer srv.Close()
+
+	track, err := newTestClient(srv).Track("42")
+	if err != nil {
+		t.Fatalf("Track: %v", err)
+	}
+	if track.RatingKey != "42" || track.PartKey != "/library/parts/4/file.flac" {
+		t.Fatalf("Track = %+v", track)
 	}
 }
 
@@ -692,6 +818,59 @@ func TestRequestHeaders(t *testing.T) {
 	defer srv.Close()
 
 	_ = newTestClient(srv).Ping()
+}
+
+func TestAccountClientRediscoversSelectedServer(t *testing.T) {
+	serverRequests := 0
+	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverRequests++
+		if got := r.Header.Get("X-Plex-Client-Identifier"); got != "client-1" {
+			t.Errorf("server client identifier = %q, want client-1", got)
+		}
+		if r.URL.Path == "/identity" {
+			if got := r.Header.Get("X-Plex-Token"); got != "server-token" {
+				t.Errorf("probe token = %q, want server-token", got)
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if got := r.URL.Query().Get("X-Plex-Token"); got != "server-token" {
+			t.Errorf("request token = %q, want server-token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"friendlyName":"Home"}}`))
+	}))
+	defer media.Close()
+
+	discoveries := 0
+	account := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		discoveries++
+		if got := r.Header.Get("X-Plex-Client-Identifier"); got != "client-1" {
+			t.Errorf("account client identifier = %q, want client-1", got)
+		}
+		if got := r.Header.Get("X-Plex-Token"); got != "account-token" {
+			t.Errorf("account token = %q, want account-token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `[{"name":"Home","clientIdentifier":"server-1","provides":"server","owned":true,"accessToken":"server-token","connections":[{"uri":%q,"protocol":"http","local":true}]}]`, media.URL)
+	}))
+	defer account.Close()
+
+	api := &AccountAPI{baseURL: account.URL, client: account.Client(), pollInterval: time.Millisecond}
+	client := newAccountClient("http://stale.invalid", "account-token", "client-1", "server-1", api)
+	if err := client.Ping(); err != nil {
+		t.Fatalf("first Ping: %v", err)
+	}
+	client.RefreshConnection()
+	if err := client.Ping(); err != nil {
+		t.Fatalf("second Ping: %v", err)
+	}
+	if discoveries != 2 {
+		t.Fatalf("resource discoveries = %d, want 2", discoveries)
+	}
+	if serverRequests != 4 {
+		t.Fatalf("server requests = %d, want 4", serverRequests)
+	}
 }
 
 func TestClientSendsUserAgent(t *testing.T) {

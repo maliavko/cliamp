@@ -2,11 +2,14 @@
 package plex
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bjarneo/cliamp/internal/httpclient"
@@ -22,16 +25,74 @@ var apiClient = httpclient.NewAPI(30 * time.Second)
 
 // Client speaks to a Plex Media Server over its HTTP API.
 type Client struct {
+	mu        sync.Mutex
 	baseURL   string   // e.g. "http://192.168.1.10:32400"
-	token     string   // X-Plex-Token
+	token     string   // X-Plex-Token used with the current server
+	clientID  string   // stable device identity sent with Plex requests
 	libraries []string // if non-empty, MusicSections filters to these titles (case-insensitive)
+	account   *accountBinding
+}
+
+type accountBinding struct {
+	api       *AccountAPI
+	token     string
+	clientID  string
+	serverID  string
+	connected bool
 }
 
 // NewClient returns a Client for the given server URL and authentication token.
 // libraries is an optional list of music library names to restrict MusicSections to.
 // When not provided, all music libraries will be loaded
 func NewClient(baseURL, token string, libraries ...string) *Client {
-	return &Client{baseURL: baseURL, token: token, libraries: libraries}
+	return &Client{baseURL: baseURL, token: token, clientID: accountProduct, libraries: libraries}
+}
+
+// NewAccountClient returns a client that rediscovers the selected Plex server
+// through plex.tv before its first request. baseURL is retained for display and
+// as the last known connection in config; discovery supplies the live route.
+func NewAccountClient(baseURL, accountToken, clientID, serverID string, libraries ...string) *Client {
+	return newAccountClient(baseURL, accountToken, clientID, serverID, NewAccountAPI(), libraries...)
+}
+
+func newAccountClient(baseURL, accountToken, clientID, serverID string, api *AccountAPI, libraries ...string) *Client {
+	return &Client{
+		baseURL:   baseURL,
+		token:     accountToken,
+		clientID:  clientID,
+		libraries: libraries,
+		account: &accountBinding{
+			api:      api,
+			token:    accountToken,
+			clientID: clientID,
+			serverID: serverID,
+		},
+	}
+}
+
+func (c *Client) endpoint(ctx context.Context) (string, string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.account != nil && !c.account.connected {
+		server, err := c.account.api.ConnectServer(ctx, c.account.token, c.account.clientID, c.account.serverID)
+		if err != nil {
+			return "", "", err
+		}
+		c.baseURL = server.URL
+		c.token = server.AccessToken
+		c.account.connected = true
+	}
+	return c.baseURL, c.token, nil
+}
+
+// RefreshConnection makes an account-backed client rediscover its route on
+// the next request. Manual clients keep their configured URL unchanged.
+func (c *Client) RefreshConnection() {
+	c.mu.Lock()
+	if c.account != nil {
+		c.account.connected = false
+	}
+	c.mu.Unlock()
 }
 
 // Section represents a Plex library section (e.g. a music library).
@@ -60,6 +121,8 @@ type Track struct {
 	TrackNumber int    // index field in Plex API
 	Duration    int    // milliseconds
 	PartKey     string // relative path, e.g. "/library/parts/67890/1234567890/file.flac"
+	UserRating  float64
+	Thumb       string // authenticated artwork path
 }
 
 // Playlist represents a Plex playlist (smart or user-created) of audio tracks.
@@ -73,18 +136,22 @@ type Playlist struct {
 
 // get issues an authenticated GET request and decodes the JSON response into result.
 func (c *Client) get(path string, params url.Values, result any) error {
+	baseURL, token, err := c.endpoint(context.Background())
+	if err != nil {
+		return fmt.Errorf("plex: connect account server: %w", err)
+	}
 	if params == nil {
 		params = url.Values{}
 	}
-	params.Set("X-Plex-Token", c.token)
+	params.Set("X-Plex-Token", token)
 
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+path+"?"+params.Encode(), nil)
+	req, err := http.NewRequest(http.MethodGet, baseURL+path+"?"+params.Encode(), nil)
 	if err != nil {
 		return fmt.Errorf("plex: %s: %w", path, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "cliamp")
-	req.Header.Set("X-Plex-Client-Identifier", "cliamp")
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 
 	resp, err := apiClient.Do(req)
 	if err != nil {
@@ -103,6 +170,118 @@ func (c *Client) get(path string, params url.Values, result any) error {
 
 	if err := httpclient.ReadJSON(resp.Body, maxResponseBody, result); err != nil {
 		return fmt.Errorf("plex: %s: %w", path, err)
+	}
+	return nil
+}
+
+// SetRating updates the current user's rating for one Plex library item.
+// Plex uses 10 for a liked track and 0 to clear the like.
+func (c *Client) SetRating(ctx context.Context, ratingKey string, rating float64) error {
+	if ratingKey == "" {
+		return fmt.Errorf("plex: rate: missing rating key")
+	}
+	params := url.Values{
+		"identifier": {"com.plexapp.plugins.library"},
+		"key":        {ratingKey},
+		"rating":     {fmt.Sprintf("%g", rating)},
+	}
+	return c.doAction(ctx, http.MethodPut, "/:/rate", params)
+}
+
+// Artwork downloads one server-relative artwork path with the active Plex
+// credentials. Tokens stay in request headers and never enter the returned
+// track metadata or cache filename.
+func (c *Client) Artwork(ctx context.Context, artworkPath string) ([]byte, error) {
+	u, err := url.Parse(artworkPath)
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
+		return nil, fmt.Errorf("plex: artwork: invalid path")
+	}
+	baseURL, token, err := c.endpoint(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("plex: connect account server: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+u.RequestURI(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: %w", err)
+	}
+	req.Header.Set("Accept", "image/*")
+	req.Header.Set("X-Plex-Product", "cliamp")
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
+	req.Header.Set("X-Plex-Token", token)
+	resp, err := apiClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: server unreachable: %w", netdiag.Explain(err))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("plex: token invalid or expired")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("plex: artwork: HTTP %s", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: %w", err)
+	}
+	if len(raw) > maxResponseBody {
+		return nil, fmt.Errorf("plex: artwork exceeds %d bytes", maxResponseBody)
+	}
+	return raw, nil
+}
+
+// ReportTimeline updates Plex's view of the current playback position.
+func (c *Client) ReportTimeline(ctx context.Context, ratingKey, state string, position, duration time.Duration) error {
+	if ratingKey == "" {
+		return fmt.Errorf("plex: timeline: missing rating key")
+	}
+	params := url.Values{
+		"key":       {"/library/metadata/" + ratingKey},
+		"ratingKey": {ratingKey},
+		"state":     {state},
+		"time":      {strconv.FormatInt(max(position.Milliseconds(), 0), 10)},
+		"duration":  {strconv.FormatInt(max(duration.Milliseconds(), 0), 10)},
+	}
+	return c.doAction(ctx, http.MethodPost, "/:/timeline", params)
+}
+
+// Scrobble records one completed play in Plex.
+func (c *Client) Scrobble(ctx context.Context, ratingKey string) error {
+	if ratingKey == "" {
+		return fmt.Errorf("plex: scrobble: missing rating key")
+	}
+	params := url.Values{
+		"identifier": {"com.plexapp.plugins.library"},
+		"key":        {ratingKey},
+	}
+	return c.doAction(ctx, http.MethodPut, "/:/scrobble", params)
+}
+
+func (c *Client) doAction(ctx context.Context, method, endpoint string, params url.Values) error {
+	baseURL, token, err := c.endpoint(ctx)
+	if err != nil {
+		return fmt.Errorf("plex: connect account server: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return fmt.Errorf("plex: %s: %w", strings.TrimPrefix(endpoint, "/:/"), err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Product", "cliamp")
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
+	req.Header.Set("X-Plex-Token", token)
+
+	resp, err := apiClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("plex: %s: server unreachable: %w", strings.TrimPrefix(endpoint, "/:/"), netdiag.Explain(err))
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBody))
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("plex: token invalid or expired")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("plex: %s: HTTP %s", strings.TrimPrefix(endpoint, "/:/"), resp.Status)
 	}
 	return nil
 }
@@ -348,6 +527,23 @@ func (c *Client) Tracks(albumRatingKey string) ([]Track, error) {
 	return tracks, nil
 }
 
+// Track returns one track by its Plex ratingKey. It restores the stream-part
+// mapping for a logical Plex URI after cliamp restarts.
+func (c *Client) Track(ratingKey string) (Track, error) {
+	var result struct {
+		MediaContainer struct {
+			Metadata []trackJSON `json:"Metadata"`
+		} `json:"MediaContainer"`
+	}
+	if err := c.get("/library/metadata/"+ratingKey, nil, &result); err != nil {
+		return Track{}, err
+	}
+	if len(result.MediaContainer.Metadata) == 0 {
+		return Track{}, fmt.Errorf("plex: track %s not found", ratingKey)
+	}
+	return trackFromJSON(result.MediaContainer.Metadata[0]), nil
+}
+
 // Search searches the music library for tracks matching query.
 // Returns nil without making an HTTP call when query is empty.
 func (c *Client) Search(query string) ([]Track, error) {
@@ -378,6 +574,8 @@ func (c *Client) Search(query string) ([]Track, error) {
 // partKey is the relative path from the Part element, e.g. "/library/parts/…/file.flac".
 // The token is appended as a query parameter; Plex accepts it in either header or query form.
 func (c *Client) StreamURL(partKey string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.baseURL + partKey + "?X-Plex-Token=" + url.QueryEscape(c.token)
 }
 
@@ -394,13 +592,16 @@ func IsStreamURL(urlStr string) bool {
 
 // trackJSON is the shared JSON structure for track responses (children and search).
 type trackJSON struct {
-	RatingKey        string `json:"ratingKey"`
-	Title            string `json:"title"`
-	GrandparentTitle string `json:"grandparentTitle"` // artist
-	ParentTitle      string `json:"parentTitle"`      // album
-	Year             int    `json:"year"`
-	Index            int    `json:"index"`    // track number within album
-	Duration         int    `json:"duration"` // milliseconds
+	RatingKey        string  `json:"ratingKey"`
+	Title            string  `json:"title"`
+	GrandparentTitle string  `json:"grandparentTitle"` // artist
+	ParentTitle      string  `json:"parentTitle"`      // album
+	Year             int     `json:"year"`
+	Index            int     `json:"index"`    // track number within album
+	Duration         int     `json:"duration"` // milliseconds
+	UserRating       float64 `json:"userRating"`
+	Thumb            string  `json:"thumb"`
+	ParentThumb      string  `json:"parentThumb"`
 	Media            []struct {
 		Part []struct {
 			Key string `json:"key"`
@@ -413,6 +614,10 @@ func trackFromJSON(m trackJSON) Track {
 	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
 		partKey = m.Media[0].Part[0].Key
 	}
+	thumb := m.Thumb
+	if thumb == "" {
+		thumb = m.ParentThumb
+	}
 	return Track{
 		RatingKey:   m.RatingKey,
 		Title:       m.Title,
@@ -422,5 +627,7 @@ func trackFromJSON(m trackJSON) Track {
 		TrackNumber: m.Index,
 		Duration:    m.Duration,
 		PartKey:     partKey,
+		UserRating:  m.UserRating,
+		Thumb:       thumb,
 	}
 }
