@@ -116,7 +116,9 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # Auto uses native graphics in Kitty, Ghostty, and WezTerm, and a portable ANSI
 # half-block fallback in other terminals. When space permits, the square cover
 # grows to twice the visualizer height. The pane needs the full 80x24 layout and
-# is hidden in simplified and full-screen visualizer modes.
+# is hidden in simplified and full-screen visualizer modes. The track info
+# overlay (i) also shows the highlighted item's cover beside its fields, as
+# tall as the fields and in the image's own proportions.
 # cover_art = "auto"
 
 # Reduce CPU usage by lowering UI cadence and disabling visualization.

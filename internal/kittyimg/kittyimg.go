@@ -51,6 +51,24 @@ func decodeImage(raw []byte) (image.Image, error) {
 	return img, nil
 }
 
+// Aspect returns the width-to-height ratio of source (a data: URL, a file://
+// URL, or a path). It reads only the image header, so callers can size a cell
+// box to the image before rendering it.
+func Aspect(source string) (float64, error) {
+	raw, err := load(source)
+	if err != nil {
+		return 0, err
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return 0, fmt.Errorf("kittyimg: decode config: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, fmt.Errorf("kittyimg: image has no size")
+	}
+	return float64(cfg.Width) / float64(cfg.Height), nil
+}
+
 // placeholder is the private-use character kitty composites the image behind.
 const placeholder = '\U0010EEEE'
 
