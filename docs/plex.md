@@ -56,6 +56,11 @@ Artist - Album Title (Year)
 
 Select a playlist or album to load its tracks. Smart playlists are included. They resolve to current server content.
 
+With Metadata enabled in the full terminal layout, cliamp can show the
+authenticated Plex cover beside the visualizer without placing the Plex token
+in track metadata or the cache filename. See `cover_art` in
+[configuration](configuration.md#options).
+
 Start cliamp with Plex as the default provider:
 
 ```bash

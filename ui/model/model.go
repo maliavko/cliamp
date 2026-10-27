@@ -316,6 +316,7 @@ type Model struct {
 	paneCache          *paneCache
 	luaSelect          *luaSelectState
 	artRef             *artRef
+	cover              coverState
 	slotVis            *slotVisualizers
 	downloadsDirectory string
 	// audioDevice names the output device that the last device switch or
