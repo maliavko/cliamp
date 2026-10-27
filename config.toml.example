@@ -108,10 +108,12 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # Album cover beside the visualizer while Metadata is shown: "auto", "on", or
 # "off" (default: "auto").
-# Auto uses native graphics in Kitty, Ghostty, and WezTerm, and a portable ANSI
-# half-block fallback in other terminals. When space permits, the square cover
-# grows to twice the visualizer height. The pane needs the full 80x24 layout and
-# is hidden in simplified and full-screen visualizer modes. The track info
+# Auto shows the cover only with native graphics (Kitty, Ghostty, WezTerm);
+# other terminals show none. "on" forces a blurry ANSI half-block fallback
+# there. When space permits, the square cover grows to twice the visualizer
+# height. The pane needs the full 80x24 layout and is hidden in simplified
+# mode. The full-screen visualizer shows the cover in
+# its top-right corner, toggled by the same Ctrl+I. The track info
 # overlay (i) also shows the highlighted item's cover beside its fields, as
 # tall as the fields and in the image's own proportions.
 # cover_art = "auto"

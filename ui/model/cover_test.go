@@ -11,6 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/bjarneo/cliamp/playlist"
 )
 
@@ -21,6 +25,9 @@ func coverTestModel(t *testing.T, width, height int) Model {
 	m := New(engine, playlist.New(), nil, "", nil, nil, nil, nil, nil, nil)
 	m.width, m.height = width, height
 	m.showMetadata = true
+	// Most tests run in a plain test terminal; "on" keeps the block fallback
+	// so they can check layout and rendering.
+	m.SetCoverArtMode("on")
 	m.recomputeLayout()
 	return m
 }
@@ -35,7 +42,7 @@ func TestCoverGeometryModes(t *testing.T) {
 		proto string
 	}{
 		{name: "auto with kitty", term: "xterm-kitty", mode: "auto", w: 100, h: 24, want: true, proto: "kitty"},
-		{name: "auto block fallback", term: "xterm-256color", mode: "auto", w: 100, h: 24, want: true, proto: "blocks"},
+		{name: "auto without graphics", term: "xterm-256color", mode: "auto", w: 100, h: 24},
 		{name: "forced block fallback", term: "xterm-256color", mode: "on", w: 100, h: 24, want: true, proto: "blocks"},
 		{name: "disabled", term: "xterm-kitty", mode: "off", w: 100, h: 24},
 		{name: "compact layout", term: "xterm-kitty", mode: "on", w: 70, h: 20},
@@ -71,7 +78,6 @@ func TestSetCoverArtModeNormalizesInvalidValue(t *testing.T) {
 func TestCoverFollowsMetadataVisibility(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	m := coverTestModel(t, 120, 40)
-	m.SetCoverArtMode("auto")
 	m.cover.local = "file:///cover.png"
 	m.recomputeLayout()
 
@@ -356,5 +362,116 @@ func TestInfoCoverHiddenWhenTooNarrow(t *testing.T) {
 	}
 	if got, want := m.infoTextWidth(), m.infoWidth(); got != want {
 		t.Fatalf("text width = %d, want full body %d without a cover", got, want)
+	}
+}
+
+func TestFullVisCoverMatchesMainView(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	tests := []struct {
+		name     string
+		w, h     int
+		metadata bool
+		mode     string
+		want     bool
+	}{
+		{name: "shown", w: 120, h: 40, metadata: true, mode: "on", want: true},
+		{name: "auto without graphics", w: 120, h: 40, metadata: true, mode: "auto"},
+		{name: "ctrl+i off", w: 120, h: 40, metadata: false, mode: "on"},
+		{name: "cover_art off", w: 120, h: 40, metadata: true, mode: "off"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := coverTestModel(t, tt.w, tt.h)
+			m.SetCoverArtMode(tt.mode)
+			m.SetShowMetadata(tt.metadata)
+			m.cover.local = "file:///cover.png"
+			m.recomputeLayout()
+			mainCols, mainRows, _, mainVisible := m.coverGeometry()
+
+			m.fullVis = true
+			m.recomputeLayout()
+			cols, rows, _, visible := m.coverGeometry()
+			if visible != tt.want {
+				t.Fatalf("full-screen cover visible = %v, want %v", visible, tt.want)
+			}
+			if visible && (!mainVisible || cols != mainCols || rows != mainRows) {
+				t.Fatalf("full-screen cover %dx%d, main view %dx%d (visible %v)", cols, rows, mainCols, mainRows, mainVisible)
+			}
+		})
+	}
+}
+
+func TestFullVisCoverSitsUnderStatus(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	m := coverTestModel(t, 120, 40)
+	m.playlist.Replace([]playlist.Track{{Path: "song.mp3", Title: "Song", AlbumArtURL: writeCoverPNG(t, "full.png", 4, 4)}})
+	m.fullVis = true
+	m.recomputeLayout()
+
+	load := m.ensureCover()
+	if load == nil {
+		t.Fatal("ensureCover did not load the playing cover")
+	}
+	m.handleCoverLoaded(load().(coverLoadedMsg))
+	m.recomputeLayout()
+	render := m.ensureCover()
+	if render == nil {
+		t.Fatal("ensureCover did not render the full-screen cover")
+	}
+	m.handleCoverRendered(render().(coverRenderedMsg))
+
+	_, rows, _, _ := m.coverGeometry()
+	lines := strings.Split(m.renderFullVisualizer(), "\n")
+	status := ansi.Strip(lines[1])
+	for i := range fullVisCoverTop {
+		if strings.Contains(ansi.Strip(lines[i]), "▀") {
+			t.Fatalf("cover reaches line %d above the visualizer: %q", i, ansi.Strip(lines[i]))
+		}
+	}
+	statusEnd := lipgloss.Width(strings.TrimRight(status, " "))
+	for i := fullVisCoverTop; i < fullVisCoverTop+rows; i++ {
+		plain := strings.TrimRight(ansi.Strip(lines[i]), " ")
+		if !strings.HasSuffix(plain, "▀") {
+			t.Fatalf("line %d does not end with cover cells: %q", i, plain)
+		}
+		if got := lipgloss.Width(plain); got != statusEnd {
+			t.Fatalf("line %d ends at %d, status ends at %d", i, got, statusEnd)
+		}
+	}
+}
+
+func TestFullVisCtrlIDoesNotOpenInfo(t *testing.T) {
+	m := coverTestModel(t, 120, 40)
+	m.SetShowMetadata(false)
+	m.fullVis = true
+	saver := &recordingSaver{}
+	m.configSaver = saver
+	m.handleFullVisualizerKey(tea.KeyPressMsg{Code: 'i', Mod: tea.ModCtrl})
+	if !m.showMetadata || m.info.visible || !m.fullVis {
+		t.Fatalf("Ctrl+I in full vis: metadata=%v info=%v fullVis=%v", m.showMetadata, m.info.visible, m.fullVis)
+	}
+	if saver.saved["show_metadata"] != "true" {
+		t.Fatalf("saved = %v, want show_metadata=true", saver.saved)
+	}
+}
+
+func TestAutoCoverWithoutGraphicsKeepsLayout(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERM_PROGRAM", "")
+	m := coverTestModel(t, 120, 40)
+	m.SetCoverArtMode("auto")
+	m.cover.local = "file:///cover.png"
+	m.recomputeLayout()
+	if _, _, _, visible := m.coverGeometry(); visible {
+		t.Fatal("auto drew a cover in a terminal without graphics")
+	}
+	if m.layout.coverRows != m.layout.baseVisualizerRows || m.layout.visualizerRows != m.layout.baseVisualizerRows {
+		t.Fatalf("visualizer grew for a hidden cover: cover=%d vis=%d base=%d", m.layout.coverRows, m.layout.visualizerRows, m.layout.baseVisualizerRows)
+	}
+
+	m.playlist.Replace([]playlist.Track{{Path: "a.mp3", Title: "A", AlbumArtURL: "file:///cover.png"}})
+	m.info.visible = true
+	if cmd := m.ensureInfoCover(); cmd != nil || m.infoCover.key != "" {
+		t.Fatal("auto loaded an info-overlay cover in a terminal without graphics")
 	}
 }

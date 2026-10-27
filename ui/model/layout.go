@@ -16,16 +16,19 @@ const (
 )
 
 type frameLayout struct {
-	tier               layoutTier
-	frameWidth         int
-	panelWidth         int
-	paddingH           int
-	paddingV           int
-	fixedRows          int
-	footerRows         int
-	bodyRows           int
-	visualizerRows     int
-	coverRows          int
+	tier           layoutTier
+	frameWidth     int
+	panelWidth     int
+	paddingH       int
+	paddingV       int
+	fixedRows      int
+	footerRows     int
+	bodyRows       int
+	visualizerRows int
+	coverRows      int
+	// mainCoverRows is coverRows as the main view lays it out, so the
+	// full-screen visualizer can draw the same cover size.
+	mainCoverRows      int
 	baseVisualizerRows int
 	fullVisualizerRows int
 	// twoColumn splits the body region into the playlist (left) and the
@@ -116,6 +119,13 @@ func (l frameLayout) frameStyle() lipgloss.Style {
 // derives the row budget from it: fixed chrome, the visualizer, and whatever
 // is left for the body.
 func (m *Model) recomputeLayout() {
+	m.layoutFor(true)
+}
+
+// layoutFor computes the layout and, when sizeVisualizer is set, sizes the
+// shared visualizer to it. A layout computed on a Model copy must not resize
+// the visualizer the real Model is drawing.
+func (m *Model) layoutFor(sizeVisualizer bool) {
 	width, height := m.width, m.height
 	if width <= 0 {
 		width = 80
@@ -215,7 +225,7 @@ func (m *Model) recomputeLayout() {
 			needed++
 		}
 		minVisualizerRows := 1
-		if m.coverArtMode() != "off" && layout.visualizerRows >= coverMinRows {
+		if m.coverEnabled() && layout.visualizerRows >= coverMinRows {
 			minVisualizerRows = coverMinRows
 		}
 		freed := min(max(0, needed-bodyRows), max(0, layout.visualizerRows-minVisualizerRows))
@@ -223,7 +233,7 @@ func (m *Model) recomputeLayout() {
 		layout.fixedRows -= freed
 	}
 	layout.coverRows = layout.visualizerRows
-	if layout.twoColumn && m.showMetadata && m.cover.local != "" && m.coverArtMode() != "off" &&
+	if layout.twoColumn && m.showMetadata && m.cover.local != "" && m.coverEnabled() &&
 		!m.headless && !m.fullVis && !m.visualizerDisabled() {
 		// Once artwork is ready, restore the large presentation: the cover and
 		// visualizer can grow to twice their configured height. Keep enough body
@@ -257,8 +267,17 @@ func (m *Model) recomputeLayout() {
 		}
 	}
 
+	layout.mainCoverRows = layout.coverRows
+	if m.fullVis {
+		// The full-screen visualizer has no columns, so its own coverRows
+		// misses the main view's large cover. Lay out the main view on a copy.
+		main := *m
+		main.fullVis = false
+		main.layoutFor(false)
+		layout.mainCoverRows = main.layout.coverRows
+	}
 	m.layout = layout
-	if m.vis != nil {
+	if sizeVisualizer && m.vis != nil {
 		m.vis.Cols = layout.panelWidth
 		if m.width <= 0 && !m.headless {
 			// Bubbletea draws a frame before the first WindowSizeMsg. The
