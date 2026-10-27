@@ -32,9 +32,6 @@ refresh, visible Plex like state, cover art, and play-context restore are
 complete. Playlist write-back, switching servers without a new sign-in, and
 transcoding are out of scope. Remaining work, in suggested order:
 
-- [ ] Scrub legacy Plex stream URLs carrying `X-Plex-Token` from history,
-  resume state, local playlists, and favorites. Upstream builds stored the
-  token in track paths; feat/plex no longer does, but old entries remain.
 - [ ] Consider a debounced selected-album cover preview in provider browsers.
   Reuse the now-playing artwork cache and renderer, cancel stale selection
   loads, and add it only where it does not reduce useful list space.
