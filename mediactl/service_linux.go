@@ -5,6 +5,8 @@ package mediactl
 import (
 	"fmt"
 	"math"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,7 +56,22 @@ type Service struct {
 	lastCanSeek bool
 	trackSeq    int64           // bumped on each track change
 	trackID     dbus.ObjectPath // current track's MPRIS object path
+
+	desktopNotifications bool
+	notifiedTrack        playback.Track
+	notified             bool
+	notifyTrack          func(playback.Track)
+
+	notifyMu  sync.Mutex
+	notifyID  uint32
+	notifySeq uint64
 }
+
+const (
+	notificationsBus       = "org.freedesktop.Notifications"
+	notificationsPath      = dbus.ObjectPath("/org/freedesktop/Notifications")
+	notificationsInterface = "org.freedesktop.Notifications"
+)
 
 const introspectXML = `
 <node>
@@ -196,6 +213,7 @@ func newService(conn *dbus.Conn, send func(tea.Msg)) (*Service, error) {
 		trackSeq:    1,
 		trackID:     trackPath(1),
 	}
+	svc.notifyTrack = svc.queueDesktopNotification
 	svc.volFloor.Store(math.Float64bits(initialVolumeFloor))
 	path := dbus.ObjectPath("/org/mpris/MediaPlayer2")
 
@@ -272,6 +290,17 @@ func newService(conn *dbus.Conn, send func(tea.Msg)) (*Service, error) {
 
 	go svc.forwardMessages()
 	return svc, nil
+}
+
+// SetDesktopNotifications enables notifications for newly started tracks.
+// The setting is applied before the model starts sending playback states.
+func (s *Service) SetDesktopNotifications(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.desktopNotifications = enabled
+	s.mu.Unlock()
 }
 
 // dispatch queues msg for send and returns at once. D-Bus handlers use it
@@ -376,6 +405,96 @@ func (s *Service) Update(state playback.State) {
 		s.publish("CanSeek", state.Seekable)
 		s.lastCanSeek = state.Seekable
 	}
+
+	s.updateDesktopNotification(state)
+}
+
+// updateDesktopNotification emits when a track reaches Playing. Metadata can
+// arrive while a network source is still buffering, so a track change by
+// itself is not enough. A late local artwork URL replaces the text-only card;
+// duration updates, pause/resume, and reconnects do not emit again.
+func (s *Service) updateDesktopNotification(state playback.State) {
+	if !s.desktopNotifications || s.notifyTrack == nil {
+		return
+	}
+	if state.Status == playback.StatusStopped && state.Track == (playback.Track{}) {
+		s.notified = false
+		s.notifiedTrack = playback.Track{}
+		return
+	}
+	if s.notified && sameTrack(state.Track, s.notifiedTrack) {
+		if state.Track.ArtURL == "" || state.Track.ArtURL == s.notifiedTrack.ArtURL {
+			return
+		}
+		s.notifiedTrack = state.Track
+		s.notifyTrack(state.Track)
+		return
+	}
+	if state.Status != playback.StatusPlaying || state.Track.Title == "" {
+		return
+	}
+	s.notified = true
+	s.notifiedTrack = state.Track
+	s.notifyTrack(state.Track)
+}
+
+// queueDesktopNotification preserves playback order while D-Bus calls run away
+// from the Bubble Tea event loop.
+func (s *Service) queueDesktopNotification(track playback.Track) {
+	s.notifyMu.Lock()
+	s.notifySeq++
+	seq := s.notifySeq
+	s.notifyMu.Unlock()
+	go s.sendTrackNotification(seq, track)
+}
+
+func (s *Service) sendTrackNotification(seq uint64, track playback.Track) {
+	s.sendNotification(seq, track, notificationIcon(track.ArtURL))
+}
+
+func (s *Service) sendNotification(seq uint64, track playback.Track, icon string) {
+	s.notifyMu.Lock()
+	defer s.notifyMu.Unlock()
+	if seq != s.notifySeq || s.conn == nil || !s.conn.Connected() {
+		return
+	}
+
+	summary, body := strings.TrimSpace(track.Artist), strings.TrimSpace(track.Title)
+	if summary == "" {
+		summary, body = body, ""
+	}
+	hints := map[string]dbus.Variant{
+		"desktop-entry": dbus.MakeVariant("cliamp"),
+		"urgency":       dbus.MakeVariant(byte(1)),
+	}
+	if icon != "" {
+		hints["image-path"] = dbus.MakeVariant(icon)
+	}
+	var id uint32
+	call := s.conn.Object(notificationsBus, notificationsPath).Call(
+		notificationsInterface+".Notify", 0,
+		"cliamp", s.notifyID, "cliamp", summary, body, []string{}, hints, int32(-1),
+	)
+	if err := call.Store(&id); err != nil {
+		applog.Debug("desktop notification: %v", err)
+		return
+	}
+	s.notifyID = id
+}
+
+// notificationIcon accepts only a local file URL. Artwork downloads and cache
+// ownership belong to the model's shared album-art pipeline; remote URLs never
+// reach the desktop notification service.
+func notificationIcon(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "file") || u.Host != "" || u.Path == "" {
+		return ""
+	}
+	return raw
 }
 
 // sameTrack reports whether a and b differ at most in Duration and ArtURL. A

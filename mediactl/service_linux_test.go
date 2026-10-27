@@ -403,3 +403,69 @@ func TestServiceTrackIDFollowsTrackIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopNotificationForNewTrackAndLateArtwork(t *testing.T) {
+	svc := newTestService(t, func(tea.Msg) {})
+	svc.SetDesktopNotifications(true)
+	var notified []playback.Track
+	svc.notifyTrack = func(track playback.Track) { notified = append(notified, track) }
+
+	first := playback.Track{Title: "Silver Wings", Artist: "Pallbearer", URL: "plex:track:1"}
+	second := playback.Track{Title: "Foreigner", Artist: "Pallbearer", URL: "plex:track:2"}
+
+	// Metadata can be published while a network source is still buffering.
+	svc.Update(playback.State{Status: playback.StatusStopped, Track: first})
+	if len(notified) != 0 {
+		t.Fatalf("buffering notifications = %d, want 0", len(notified))
+	}
+
+	svc.Update(playback.State{Status: playback.StatusPlaying, Track: first})
+	svc.Update(playback.State{Status: playback.StatusPaused, Track: first})
+	svc.Update(playback.State{Status: playback.StatusPlaying, Track: first})
+	withArt := first
+	withArt.ArtURL = "file:///tmp/cover.jpg"
+	// Artwork finishing while paused replaces the existing card; resuming does
+	// not emit again.
+	svc.Update(playback.State{Status: playback.StatusPaused, Track: withArt})
+	svc.Update(playback.State{Status: playback.StatusPlaying, Track: withArt})
+	if len(notified) != 2 || notified[0] != first || notified[1] != withArt {
+		t.Fatalf("first-track notifications = %+v, want text then local artwork", notified)
+	}
+
+	svc.Update(playback.State{Status: playback.StatusPlaying, Track: second})
+	if len(notified) != 3 || notified[2] != second {
+		t.Fatalf("next-track notifications = %+v, want second track", notified)
+	}
+
+	// A real stop clears the track. Starting the same track later is a new play.
+	svc.Update(playback.State{Status: playback.StatusStopped})
+	svc.Update(playback.State{Status: playback.StatusPlaying, Track: second})
+	if len(notified) != 4 || notified[3] != second {
+		t.Fatalf("replayed-track notifications = %+v, want second track again", notified)
+	}
+}
+
+func TestDesktopNotificationsCanBeDisabled(t *testing.T) {
+	svc := newTestService(t, func(tea.Msg) {})
+	called := false
+	svc.notifyTrack = func(playback.Track) { called = true }
+	svc.SetDesktopNotifications(false)
+	svc.Update(playback.State{
+		Status: playback.StatusPlaying,
+		Track:  playback.Track{Title: "Song", URL: "/song.flac"},
+	})
+	if called {
+		t.Fatal("disabled desktop notifications emitted")
+	}
+}
+
+func TestNotificationIconAcceptsOnlyLocalFiles(t *testing.T) {
+	if got := notificationIcon("file:///tmp/cover.jpg"); got != "file:///tmp/cover.jpg" {
+		t.Fatalf("local icon = %q", got)
+	}
+	for _, source := range []string{"https://example.com/cover.jpg?token=secret", "file://server/cover.jpg", "data:image/png;base64,AA==", "/tmp/cover.jpg"} {
+		if got := notificationIcon(source); got != "" {
+			t.Errorf("notificationIcon(%q) = %q, want empty", source, got)
+		}
+	}
+}

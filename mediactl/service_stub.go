@@ -22,6 +22,8 @@ func New(send func(tea.Msg)) (*Service, error) {
 
 func (s *Service) Update(state playback.State) {}
 
+func (s *Service) SetDesktopNotifications(bool) {}
+
 func (s *Service) Seeked(position time.Duration) {}
 
 func (s *Service) Close() {}
