@@ -40,6 +40,7 @@ var (
 	_ provider.TrackFavoriter      = (*Provider)(nil)
 	_ provider.TrackFavoriteState  = (*Provider)(nil)
 	_ provider.ProgressReporter    = (*Provider)(nil)
+	_ provider.ArtworkFetcher      = (*Provider)(nil)
 )
 
 // Provider implements playlist.Provider for a Plex Media Server.
@@ -53,6 +54,7 @@ type Provider struct {
 	playlistCache []playlist.PlaylistInfo
 	trackCache    map[string]trackCacheEntry
 	partKeys      map[string]string
+	artKeys       map[string]string
 	favorites     map[string]bool
 	now           func() time.Time
 }
@@ -146,6 +148,7 @@ func (p *Provider) Refresh() {
 	p.playlistCache = nil
 	p.trackCache = nil
 	p.partKeys = nil
+	p.artKeys = nil
 	p.favorites = nil
 	p.mu.Unlock()
 	p.client.RefreshConnection()
@@ -229,6 +232,12 @@ func (p *Provider) convertTracks(plexTracks []Track, limit int) []playlist.Track
 			p.partKeys = make(map[string]string)
 		}
 		p.partKeys[t.RatingKey] = t.PartKey
+		if t.Thumb != "" {
+			if p.artKeys == nil {
+				p.artKeys = make(map[string]string)
+			}
+			p.artKeys[t.RatingKey] = t.Thumb
+		}
 		if p.favorites == nil {
 			p.favorites = make(map[string]bool)
 		}
@@ -277,6 +286,12 @@ func (p *Provider) ResolveSource(uri string) (string, error) {
 			p.partKeys = make(map[string]string)
 		}
 		p.partKeys[id] = partKey
+		if track.Thumb != "" {
+			if p.artKeys == nil {
+				p.artKeys = make(map[string]string)
+			}
+			p.artKeys[id] = track.Thumb
+		}
 		if p.favorites == nil {
 			p.favorites = make(map[string]bool)
 		}
@@ -346,6 +361,42 @@ func (p *Provider) SetTrackFavorite(ctx context.Context, track playlist.Track, f
 	p.favorites[id] = favorite
 	p.mu.Unlock()
 	return nil
+}
+
+// CanFetchArtwork reports whether track belongs to Plex. A restored track may
+// not have its artwork path in memory yet; FetchArtwork restores it from the
+// item metadata before downloading the image.
+func (p *Provider) CanFetchArtwork(track playlist.Track) bool {
+	return plexTrackID(track) != ""
+}
+
+// FetchArtwork returns authenticated cover bytes without exposing a token in
+// the track or URL consumed by the UI.
+func (p *Provider) FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error) {
+	id := plexTrackID(track)
+	if id == "" {
+		return nil, fmt.Errorf("plex: artwork: track has no rating key")
+	}
+	p.mu.Lock()
+	artKey := p.artKeys[id]
+	p.mu.Unlock()
+	if artKey == "" {
+		item, err := p.client.Track(id)
+		if err != nil {
+			return nil, fmt.Errorf("plex: artwork metadata %s: %w", id, err)
+		}
+		artKey = item.Thumb
+		if artKey == "" {
+			return nil, fmt.Errorf("plex: track %s has no artwork", id)
+		}
+		p.mu.Lock()
+		if p.artKeys == nil {
+			p.artKeys = make(map[string]string)
+		}
+		p.artKeys[id] = artKey
+		p.mu.Unlock()
+	}
+	return p.client.Artwork(ctx, artKey)
 }
 
 func plexTrackID(track playlist.Track) string {

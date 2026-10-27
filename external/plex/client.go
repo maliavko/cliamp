@@ -122,6 +122,7 @@ type Track struct {
 	Duration    int    // milliseconds
 	PartKey     string // relative path, e.g. "/library/parts/67890/1234567890/file.flac"
 	UserRating  float64
+	Thumb       string // authenticated artwork path
 }
 
 // Playlist represents a Plex playlist (smart or user-created) of audio tracks.
@@ -185,6 +186,47 @@ func (c *Client) SetRating(ctx context.Context, ratingKey string, rating float64
 		"rating":     {fmt.Sprintf("%g", rating)},
 	}
 	return c.doAction(ctx, http.MethodPut, "/:/rate", params)
+}
+
+// Artwork downloads one server-relative artwork path with the active Plex
+// credentials. Tokens stay in request headers and never enter the returned
+// track metadata or cache filename.
+func (c *Client) Artwork(ctx context.Context, artworkPath string) ([]byte, error) {
+	u, err := url.Parse(artworkPath)
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
+		return nil, fmt.Errorf("plex: artwork: invalid path")
+	}
+	baseURL, token, err := c.endpoint(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("plex: connect account server: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+u.RequestURI(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: %w", err)
+	}
+	req.Header.Set("Accept", "image/*")
+	req.Header.Set("X-Plex-Product", "cliamp")
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
+	req.Header.Set("X-Plex-Token", token)
+	resp, err := apiClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: server unreachable: %w", netdiag.Explain(err))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("plex: token invalid or expired")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("plex: artwork: HTTP %s", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: %w", err)
+	}
+	if len(raw) > maxResponseBody {
+		return nil, fmt.Errorf("plex: artwork exceeds %d bytes", maxResponseBody)
+	}
+	return raw, nil
 }
 
 // ReportTimeline updates Plex's view of the current playback position.
@@ -558,6 +600,8 @@ type trackJSON struct {
 	Index            int     `json:"index"`    // track number within album
 	Duration         int     `json:"duration"` // milliseconds
 	UserRating       float64 `json:"userRating"`
+	Thumb            string  `json:"thumb"`
+	ParentThumb      string  `json:"parentThumb"`
 	Media            []struct {
 		Part []struct {
 			Key string `json:"key"`
@@ -570,6 +614,10 @@ func trackFromJSON(m trackJSON) Track {
 	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
 		partKey = m.Media[0].Part[0].Key
 	}
+	thumb := m.Thumb
+	if thumb == "" {
+		thumb = m.ParentThumb
+	}
 	return Track{
 		RatingKey:   m.RatingKey,
 		Title:       m.Title,
@@ -580,5 +628,6 @@ func trackFromJSON(m trackJSON) Track {
 		Duration:    m.Duration,
 		PartKey:     partKey,
 		UserRating:  m.UserRating,
+		Thumb:       thumb,
 	}
 }

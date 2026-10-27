@@ -42,6 +42,37 @@ func TestSetRating(t *testing.T) {
 	}
 }
 
+func TestArtworkUsesTokenHeader(t *testing.T) {
+	want := []byte("cover")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/metadata/42/thumb/1" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Plex-Token"); got != "test-token" {
+			t.Fatalf("X-Plex-Token = %q", got)
+		}
+		if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+			t.Fatalf("token leaked into query: %q", got)
+		}
+		_, _ = w.Write(want)
+	}))
+	defer srv.Close()
+
+	got, err := newTestClient(srv).Artwork(t.Context(), "/library/metadata/42/thumb/1")
+	if err != nil {
+		t.Fatalf("Artwork: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("Artwork = %q, want %q", got, want)
+	}
+}
+
+func TestArtworkRejectsAbsoluteURL(t *testing.T) {
+	if _, err := NewClient("http://localhost:32400", "token").Artwork(t.Context(), "https://example.com/cover"); err == nil {
+		t.Fatal("Artwork accepted an absolute URL")
+	}
+}
+
 func TestReportTimeline(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/:/timeline" {

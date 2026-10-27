@@ -59,7 +59,7 @@ func sectionsHandler(t *testing.T) http.HandlerFunc {
 				"MediaContainer": {
 					"Metadata": [
 						{
-							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis",
+							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis","thumb":"/library/metadata/200/thumb/1",
 							"parentTitle":"Kind of Blue","year":1959,"index":1,"duration":565000,
 							"Media":[{"Part":[{"key":"/library/parts/1/111/SoWhat.flac"}]}]
 						}
@@ -218,6 +218,9 @@ func TestProvider_Tracks(t *testing.T) {
 	}
 	if tr.TrackNumber != 1 {
 		t.Errorf("TrackNumber = %d, want 1", tr.TrackNumber)
+	}
+	if got := p.artKeys["200"]; got != "/library/metadata/200/thumb/1" {
+		t.Errorf("artwork key = %q", got)
 	}
 	if tr.DurationSecs != 565 {
 		t.Errorf("DurationSecs = %d, want 565", tr.DurationSecs)
@@ -419,6 +422,44 @@ func TestProvider_Tracks_SkipsMissingPart(t *testing.T) {
 	}
 	if tracks[0].Title != "Has Part" {
 		t.Errorf("expected 'Has Part', got %q", tracks[0].Title)
+	}
+}
+
+func TestProviderFetchArtworkKeepsTokenOffTrack(t *testing.T) {
+	want := "cover bytes"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/library/metadata/10/thumb/20" {
+			if got := r.Header.Get("X-Plex-Token"); got != "secret-token" {
+				t.Fatalf("artwork token header = %q", got)
+			}
+			if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+				t.Fatalf("artwork token leaked into query: %q", got)
+			}
+			_, _ = w.Write([]byte(want))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"1","title":"Song","thumb":"/library/metadata/10/thumb/20","Media":[{"Part":[{"key":"/library/parts/1/file.flac"}]}]}]}}`))
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "secret-token"))
+	tracks, err := p.Tracks("10")
+	if err != nil {
+		t.Fatalf("Tracks: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].AlbumArtURL != "" {
+		t.Fatalf("playlist track persisted authenticated art URL %q", tracks[0].AlbumArtURL)
+	}
+	art, err := p.FetchArtwork(t.Context(), tracks[0])
+	if err != nil {
+		t.Fatalf("FetchArtwork: %v", err)
+	}
+	if string(art) != want {
+		t.Fatalf("artwork = %q, want %q", art, want)
 	}
 }
 
