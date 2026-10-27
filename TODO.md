@@ -23,14 +23,6 @@ Updated: 2026-10-25
   duplicates, and report entries that are not usable stream URLs. Consider
   XSPF or OPML later if real station collections require them.
 
-## Cover art follow-ups
-
-Updated: 2026-10-27
-
-- [ ] Hide cover art in terminals without image support instead of drawing
-  the ANSI half-block fallback.
-- [ ] Try showing the cover in the full-screen visualizer view.
-
 ## Plex follow-ups
 
 Updated: 2026-10-26
