@@ -15,8 +15,8 @@ Updated: 2026-10-25
 Updated: 2026-10-27
 
 The browser sign-in and sign-out, server discovery, playback reporting, list
-refresh, visible Plex like state, cover art, the browser metadata column, and
-play-context restore are complete. Playlist write-back, switching servers
+refresh, visible Plex like state, cover art, the browser metadata column, library
+radio stations, and play-context restore are complete. Playlist write-back, switching servers
 without a new sign-in, and transcoding are out of scope. Remaining work, in
 suggested order:
 
