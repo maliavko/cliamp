@@ -2,12 +2,14 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/png"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/bjarneo/cliamp/playlist"
+	"github.com/bjarneo/cliamp/provider"
 )
 
 func coverTestModel(t *testing.T, width, height int) Model {
@@ -473,5 +476,244 @@ func TestAutoCoverWithoutGraphicsKeepsLayout(t *testing.T) {
 	m.info.visible = true
 	if cmd := m.ensureInfoCover(); cmd != nil || m.infoCover.key != "" {
 		t.Fatal("auto loaded an info-overlay cover in a terminal without graphics")
+	}
+}
+
+// listArtProvider serves covers for some browser entries.
+type listArtProvider struct {
+	commandsTestProvider
+	art     map[string][]byte
+	fetched []string
+}
+
+func (p *listArtProvider) CanFetchListArtwork(list playlist.PlaylistInfo) bool {
+	return p.art[list.ID] != nil
+}
+
+func (p *listArtProvider) ListDetails(list playlist.PlaylistInfo) (provider.ListDescription, bool) {
+	if list.ID == "c" {
+		return provider.ListDescription{}, false
+	}
+	return provider.ListDescription{Title: "Title " + list.ID, Subtitle: "Artist", Lines: []string{"2013-06-28 · Label"}}, true
+}
+
+func (p *listArtProvider) FetchListArtwork(_ context.Context, list playlist.PlaylistInfo) ([]byte, error) {
+	p.fetched = append(p.fetched, list.ID)
+	return p.art[list.ID], nil
+}
+
+func coverPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, image.NewNRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatalf("encode cover: %v", err)
+	}
+	return raw.Bytes()
+}
+
+func listCoverTestModel(t *testing.T) (Model, *listArtProvider) {
+	t.Helper()
+	// The cover cache lives in the data directory under HOME.
+	t.Setenv("HOME", t.TempDir())
+	m := coverTestModel(t, 120, 40)
+	prov := &listArtProvider{
+		commandsTestProvider: commandsTestProvider{name: "Plex"},
+		art:                  map[string][]byte{"a": coverPNGBytes(t), "b": coverPNGBytes(t)},
+	}
+	m.provider = prov
+	m.focus = focusProvider
+	m.provPane.lists = []playlist.PlaylistInfo{{ID: "a", Name: "Album A"}, {ID: "b", Name: "Album B"}, {ID: "c", Name: "No Art"}}
+	m.recomputeLayout()
+	return m, prov
+}
+
+func TestListCoverLoadsAfterTheCursorRests(t *testing.T) {
+	m, prov := listCoverTestModel(t)
+
+	// Moving the cursor schedules a delayed load for each new entry.
+	first := m.ensureListCover()
+	firstDue, ok := first().(listCoverDueMsg)
+	if !ok {
+		t.Fatal("ensureListCover did not schedule the delayed load")
+	}
+	m.provPane.cursor = 1
+	second := m.ensureListCover()
+	secondDue := second().(listCoverDueMsg)
+
+	// The first entry's timer fires after the cursor left it: no request.
+	if cmd := m.handleListCoverDue(firstDue); cmd != nil || len(prov.fetched) != 0 {
+		t.Fatalf("stale due message loaded a cover: fetched %v", prov.fetched)
+	}
+	load := m.handleListCoverDue(secondDue)
+	if load == nil {
+		t.Fatal("rested cursor did not load the cover")
+	}
+	loaded := load().(coverLoadedMsg)
+	if loaded.slot != coverSlotList || loaded.err != nil {
+		t.Fatalf("load = %+v", loaded)
+	}
+	m.handleCoverLoaded(loaded)
+	if len(prov.fetched) != 1 || prov.fetched[0] != "b" {
+		t.Fatalf("fetched = %v, want only b", prov.fetched)
+	}
+
+	render := m.ensureListCover()
+	if render == nil {
+		t.Fatal("loaded cover did not render")
+	}
+	m.handleCoverRendered(render().(coverRenderedMsg))
+
+	cols, rows, _, ok := m.listCoverGeometry()
+	if !ok || rows != min(m.layout.mainCoverRows, m.effectivePlaylistVisible()-listCoverTop) {
+		t.Fatalf("geometry = %dx%d %v, main cover rows %d", cols, rows, ok, m.layout.mainCoverRows)
+	}
+	col, _ := m.listColumnGeometry()
+	listWidth := col.listWidth
+	lines := strings.Split(m.renderPlaylist(), "\n")
+	for i := listCoverTop; i < listCoverTop+rows; i++ {
+		column := ansi.Strip(ansi.Cut(lines[i], listWidth+columnGutterWidth, m.layout.panelWidth))
+		if !strings.HasPrefix(column, "▀") || !strings.Contains(column, "▀") {
+			t.Fatalf("line %d: cover does not start the column: %q", i, column)
+		}
+	}
+	for i, line := range lines {
+		if left := ansi.Truncate(line, listWidth, ""); strings.Contains(ansi.Strip(left), "▀") {
+			t.Fatalf("line %d: cover reaches into the list: %q", i, ansi.Strip(line))
+		}
+	}
+	column := ansi.Strip(strings.Join(lines[listCoverTop+rows:], "\n"))
+	if !strings.Contains(column, "Title b") || !strings.Contains(column, "2013-06-28") {
+		t.Fatalf("description missing under the cover:\n%s", column)
+	}
+
+	// An entry without artwork, or leaving the browser, drops the cover.
+	m.provPane.cursor = 2
+	if cmd := m.ensureListCover(); cmd != nil || m.listCover.key != "" {
+		t.Fatal("entry without artwork kept a cover")
+	}
+	m.provPane.cursor = 0
+	m.ensureListCover()
+	m.focus = focusPlaylist
+	if m.ensureListCover(); m.listCover.key != "" {
+		t.Fatal("leaving the browser kept the cover")
+	}
+}
+
+func TestListCoverMatchesMainViewSize(t *testing.T) {
+	m, _ := listCoverTestModel(t)
+	m.cover.local = "file:///playing.png"
+	m.listCover.local = "file:///list.png"
+
+	m.focus = focusPlaylist
+	m.recomputeLayout()
+	_, mainRows, _, mainOK := m.coverGeometry()
+
+	m.focus = focusProvider
+	m.recomputeLayout()
+	_, rows, _, ok := m.listCoverGeometry()
+	if !mainOK || !ok || rows != min(mainRows, m.effectivePlaylistVisible()-listCoverTop) {
+		t.Fatalf("browser cover rows = %d (ok %v), main view rows = %d (ok %v)", rows, ok, mainRows, mainOK)
+	}
+}
+
+func TestListCoverHiddenWithoutMetadataOrGraphics(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERM_PROGRAM", "")
+	for _, tt := range []struct {
+		name string
+		set  func(*Model)
+	}{
+		{name: "ctrl+i off", set: func(m *Model) { m.SetShowMetadata(false) }},
+		{name: "auto without graphics", set: func(m *Model) { m.SetCoverArtMode("auto") }},
+		{name: "cover_art off", set: func(m *Model) { m.SetCoverArtMode("off") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, prov := listCoverTestModel(t)
+			tt.set(&m)
+			if cmd := m.ensureListCover(); cmd != nil || len(prov.fetched) != 0 {
+				t.Fatal("hidden browser cover scheduled a load")
+			}
+		})
+	}
+}
+
+// Without terminal graphics the column keeps the description, starting under
+// the one-line gap, and reserves no cover.
+func TestListColumnWithoutGraphicsShowsDescription(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERM_PROGRAM", "")
+	m, prov := listCoverTestModel(t)
+	m.SetCoverArtMode("auto")
+	if cmd := m.ensureListCover(); cmd != nil || len(prov.fetched) != 0 {
+		t.Fatal("column without graphics loaded a cover")
+	}
+	col, ok := m.listColumnGeometry()
+	if !ok {
+		t.Fatal("column hidden for a describing provider")
+	}
+	lines := strings.Split(m.renderPlaylist(), "\n")
+	if got := strings.TrimSpace(ansi.Strip(ansi.Cut(lines[listCoverTop], col.listWidth, m.layout.panelWidth))); got != "Title a" {
+		t.Fatalf("first column line = %q, want the title (column %d wide)", got, col.width)
+	}
+}
+
+// The browser column is as wide as the main view's settings pane, and the
+// list keeps the main view's playlist width.
+func TestListColumnMatchesSettingsPane(t *testing.T) {
+	m, _ := listCoverTestModel(t)
+	m.focus = focusPlaylist
+	m.recomputeLayout()
+	settings, playlistWidth := m.layout.settingsWidth, m.layout.playlistWidth
+
+	m.focus = focusProvider
+	m.recomputeLayout()
+	col, ok := m.listColumnGeometry()
+	if !ok || col.width != settings || col.listWidth != playlistWidth {
+		t.Fatalf("column = %+v (ok %v), settings pane %d, playlist %d", col, ok, settings, playlistWidth)
+	}
+	if col.coverCols > col.width {
+		t.Fatalf("cover %d cols overflows the %d-col column", col.coverCols, col.width)
+	}
+}
+
+// The list header stops at the gutter and the column has its own header, as
+// the settings pane does in the main view.
+func TestListColumnHeader(t *testing.T) {
+	m, _ := listCoverTestModel(t)
+	col, _ := m.listColumnGeometry()
+	header := m.renderPlaylistHeader()
+	if got := lipgloss.Width(header); got != m.layout.panelWidth {
+		t.Fatalf("header width = %d, want %d", got, m.layout.panelWidth)
+	}
+	list := ansi.Strip(ansi.Truncate(header, col.listWidth, ""))
+	gutter := ansi.Strip(ansi.Cut(header, col.listWidth, col.listWidth+columnGutterWidth))
+	column := ansi.Strip(ansi.Cut(header, col.listWidth+columnGutterWidth, m.layout.panelWidth))
+	if !strings.Contains(list, "Plex / Playlists") || strings.TrimSpace(gutter) != "" || !strings.Contains(column, "Metadata") {
+		t.Fatalf("header parts: list %q gutter %q column %q", list, gutter, column)
+	}
+
+	m.SetShowMetadata(false)
+	if header := ansi.Strip(m.renderPlaylistHeader()); strings.Contains(header, "Metadata") {
+		t.Fatalf("header without the column = %q", header)
+	}
+}
+
+// Ctrl+I in the provider browser shows or hides the column in place and
+// saves the preference, without opening the info overlay.
+func TestListColumnCtrlIToggles(t *testing.T) {
+	m, _ := listCoverTestModel(t)
+	saver := &recordingSaver{}
+	m.configSaver = saver
+	for _, want := range []bool{false, true} {
+		m.handleKey(tea.KeyPressMsg{Code: 'i', Mod: tea.ModCtrl})
+		if m.showMetadata != want || m.info.visible || m.focus != focusProvider {
+			t.Fatalf("Ctrl+I: metadata=%v info=%v focus=%v, want metadata %v", m.showMetadata, m.info.visible, m.focus, want)
+		}
+		if _, ok := m.listColumnGeometry(); ok != want {
+			t.Fatalf("column shown = %v, want %v", ok, want)
+		}
+		if saver.saved["show_metadata"] != strconv.FormatBool(want) {
+			t.Fatalf("saved = %v", saver.saved)
+		}
 	}
 }

@@ -113,7 +113,8 @@ eq = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 # there. When space permits, the square cover grows to twice the visualizer
 # height. The pane needs the full 80x24 layout and is hidden in simplified
 # mode. The full-screen visualizer shows the cover in
-# its top-right corner, toggled by the same Ctrl+I. The track info
+# its top-right corner, toggled by the same Ctrl+I, and the Plex browser shows
+# the cover and details of the album or playlist under the cursor. The track info
 # overlay (i) also shows the highlighted item's cover beside its fields, as
 # tall as the fields and in the image's own proportions.
 # cover_art = "auto"

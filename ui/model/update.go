@@ -31,6 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if coverCmd := nm.ensureInfoCover(); coverCmd != nil {
 			cmd = tea.Batch(cmd, coverCmd)
 		}
+		if coverCmd := nm.ensureListCover(); coverCmd != nil {
+			cmd = tea.Batch(cmd, coverCmd)
+		}
 		// A load that starts now gets its own redraws at once. The main tick
 		// can still wait up to ui.TickIdle before it runs at the spinner rate.
 		if !spinning && !nm.spinnerTicking && nm.spinnerVisible() {
@@ -386,6 +389,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case coverRenderedMsg:
 		m.handleCoverRendered(msg)
 		return m, nil
+
+	case listCoverDueMsg:
+		return m, m.handleListCoverDue(msg)
 
 	case ShowStatusMsg:
 		ttl := statusTTLDefault
