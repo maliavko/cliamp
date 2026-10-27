@@ -130,6 +130,14 @@ func (m Model) renderMetadataPane(rows int) []string {
 	return lines
 }
 
+// toggleMetadataInPlace flips the Ctrl+I preference (show_metadata) in views
+// with no Metadata section of their own, the full-screen visualizer and the
+// provider browser. Unlike toggleMetadata, it never opens the info overlay.
+func (m *Model) toggleMetadataInPlace() {
+	m.SetShowMetadata(!m.showMetadata)
+	_ = m.saveConfigBool("show_metadata", m.showMetadata)
+}
+
 func (m *Model) toggleMetadata() {
 	m.SetShowMetadata(!m.showMetadata)
 	_ = m.saveConfigBool("show_metadata", m.showMetadata)

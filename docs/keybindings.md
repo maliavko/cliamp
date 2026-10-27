@@ -331,6 +331,7 @@ Navidrome, Podcasts, or Local Playlists:
 | `Ctrl+F` | Run the provider online or server search (Spotify, Navidrome, NetEase, and others). |
 | `Ctrl+R` | Refresh the provider: reload the currently open playlist or starting wave in place (e.g. a fresh Yandex "Моя волна" batch), or return to the playlist list. For Mixcloud, also clear the cached `/me/` identity. |
 | `p` | Open the playlist as an overlay (the Local source shows it directly; create, rename, delete, add dirs/tracks) |
+| `Ctrl+I` | Show or hide the Metadata column for providers that describe their entries (Plex): the cover and details of the album or playlist under the cursor. Same `show_metadata` preference as the main view. |
 | `S` `P` `J` `E` `B` `Y` `C` `X` `M` `Q` `T` `K` `L` `R` `O` | Switch to that provider |
 | `N` | Open the browser of the provider on screen |
 | `Tab` | Leave the provider pane and focus Source, or the first visible playback control |
@@ -339,7 +340,10 @@ Navidrome, Podcasts, or Local Playlists:
 
 Playlist rows show `Name · N tracks · 1h 23m` when the provider returns track
 counts and total duration. The header shows `Provider / Playlists`. The loaded
-playlist has a `▶` prefix. Spotify groups playlists under section headers (`── library ──`, `── your playlists ──`, `── followed playlists ──`). For configured accounts, Mixcloud shows Your Mixcloud first: Stream, then Favorites. It then
+playlist has a `▶` prefix. With Metadata on (`Ctrl+I`), Plex adds a column as
+wide as the Settings pane: the cover of the album or playlist under the cursor,
+then its artist, release date and label, genres, track count, and play count.
+The cover loads after the cursor rests on an entry. Spotify groups playlists under section headers (`── library ──`, `── your playlists ──`, `── followed playlists ──`). For configured accounts, Mixcloud shows Your Mixcloud first: Stream, then Favorites. It then
 shows Browse shortcuts, public collections, Discover charts, and a
 Latest/Popular pair for each locally favorited genre under Music Styles. Leaving
 a provider-pane Browse shortcut returns to the provider pane.

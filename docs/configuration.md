@@ -97,7 +97,9 @@ visualizer = "Bars"
 # The square cover grows to twice the visualizer height when space permits.
 # The pane is shown only in the full layout (at least 80x24).
 # The full-screen visualizer (V) shows the same cover in its top-right corner,
-# below the playback status, when Ctrl+I is on there.
+# below the playback status, when Ctrl+I is on there. A provider browser that
+# describes its entries (Plex) shows a Metadata column with the cover and
+# details of the album or playlist under the cursor.
 # The track info overlay (i) also shows the highlighted item's cover beside
 # its fields, as tall as the fields and in the image's own proportions.
 cover_art = "auto"

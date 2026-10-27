@@ -115,6 +115,12 @@ func (l frameLayout) frameStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Padding(l.paddingV, l.paddingH).Width(l.frameWidth)
 }
 
+// sideColumnWidth is the width of the column right of the list: the settings
+// pane in the main view, the entry column in a provider browser.
+func sideColumnWidth(panelWidth int) int {
+	return min(settingsMaxWidth, max(settingsMinWidth, panelWidth/3))
+}
+
 // recomputeLayout picks the layout tier for the current terminal size and
 // derives the row budget from it: fixed chrome, the visualizer, and whatever
 // is left for the body.
@@ -199,7 +205,7 @@ func (m *Model) layoutFor(sizeVisualizer bool) {
 		if m.hideSettings {
 			layout.closedSettings = true
 		} else {
-			settingsWidth := min(settingsMaxWidth, max(settingsMinWidth, layout.panelWidth/3))
+			settingsWidth := sideColumnWidth(layout.panelWidth)
 			if playlistWidth := layout.panelWidth - columnGutterWidth - settingsWidth; playlistWidth >= playlistMinWidth {
 				layout.twoColumn = true
 				layout.playlistWidth = playlistWidth
@@ -268,11 +274,15 @@ func (m *Model) layoutFor(sizeVisualizer bool) {
 	}
 
 	layout.mainCoverRows = layout.coverRows
-	if m.fullVis {
-		// The full-screen visualizer has no columns, so its own coverRows
-		// misses the main view's large cover. Lay out the main view on a copy.
+	if m.fullVis || m.focus == focusProvider {
+		// The full-screen visualizer and the provider browser have no
+		// columns, so their own coverRows misses the main view's large cover.
+		// Lay out the main view on a copy.
 		main := *m
 		main.fullVis = false
+		if main.focus == focusProvider {
+			main.focus = focusPlaylist
+		}
 		main.layoutFor(false)
 		layout.mainCoverRows = main.layout.coverRows
 	}
