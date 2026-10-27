@@ -218,7 +218,7 @@ func run(overrides config.Overrides, positional []string, headless, visualizer60
 	defer stopSignals()
 	defer providers.observeAuthURLs(prog.Send)()
 
-	svc, svcErr := wireMediaCtl(prog)
+	svc, svcErr := wireMediaCtl(prog, cfg.DesktopNotifications)
 	if svcErr != nil {
 		applog.Warn("media control (MPRIS/NowPlaying) unavailable: %v", svcErr)
 	} else if svc != nil {
@@ -609,11 +609,12 @@ func initLogging(levelStr string) (func() error, string, error) {
 	return closeFn, level.String(), nil
 }
 
-func wireMediaCtl(prog *tea.Program) (*mediactl.Service, error) {
+func wireMediaCtl(prog *tea.Program, desktopNotifications bool) (*mediactl.Service, error) {
 	svc, err := mediactl.New(prog.Send)
 	if err != nil || svc == nil {
 		return svc, err
 	}
+	svc.SetDesktopNotifications(desktopNotifications)
 	go prog.Send(model.AttachNotifier(svc))
 	return svc, nil
 }

@@ -105,6 +105,12 @@ vis_rows = 7
 # This has the same effect as starting with --low-power.
 low_power = false
 
+# Show a desktop notification when a new track starts (default: true).
+# Currently built in on Linux through the freedesktop notification service.
+# The notification includes local album art and a new track replaces the
+# previous card. Pause and resume do not create duplicates.
+desktop_notifications = true
+
 # Simplified mode: artist/title and time strip without a visualizer or playlist.
 # No visualizer or playback controls are shown.
 simplified = false

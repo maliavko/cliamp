@@ -32,6 +32,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.BitDepth != 16 {
 		t.Errorf("BitDepth = %d, want 16", cfg.BitDepth)
 	}
+	if !cfg.DesktopNotifications {
+		t.Error("DesktopNotifications should be true by default")
+	}
 	if cfg.PaddingH != 3 {
 		t.Errorf("PaddingH = %d, want 3", cfg.PaddingH)
 	}

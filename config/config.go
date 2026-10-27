@@ -758,57 +758,58 @@ func (d *DownloadsConfig) set(key, val string) {
 
 // Config holds user preferences loaded from the config file.
 type Config struct {
-	Downloads        DownloadsConfig
-	Volume           float64     // dB, clamped at runtime to [VolumeMin, +6]
-	VolumeMin        float64     // dB floor, range [-90, 0]; default -50
-	VisVolumeLinked  bool        // when true, visualizer bar height follows volume; default true
-	EQ               [10]float64 // per-band gain in dB, range [-12, +12]
-	EQPreset         string      // preset name, or "" for custom
-	Repeat           string      // "off", "all", or "one"
-	Shuffle          bool
-	Mono             bool
-	Speed            float64                      // playback speed ratio: 0.25–2.0 (default 1.0)
-	AutoPlay         bool                         // start playback automatically on launch (radio streams, CLI tracks)
-	SeekStepLarge    int                          // seconds for Shift+Left/Right seek jumps
-	Provider         string                       // default provider key, a value that --provider accepts (default "cliamp")
-	Theme            string                       // theme name, or "" for ANSI default
-	Visualizer       string                       // visualizer mode name, or "" for default (Bars)
-	VisRows          int                          // visualizer height in rows at the full layout tier, or 0 for the built-in default
-	SampleRate       int                          // output sample rate: 22050, 44100, 48000, 96000, 192000
-	BufferMs         int                          // speaker buffer in milliseconds (50-5000)
-	ResampleQuality  int                          // beep resample quality factor (1–4)
-	BitDepth         int                          // PCM bit depth for FFmpeg output: 16 or 32
-	Simplified       bool                         // simplified playback view: track summary and time strip
-	HideHelpBar      bool                         // hide the key-binding hint bar above the status line
-	HideSettingsPane bool                         // close the settings pane beside the playlist
-	ShowMetadata     bool                         // expand highlighted-track metadata below settings (default false)
-	Expanded         bool                         // start with the playlist expanded (the Ctrl+X state)
-	PaddingH         int                          // horizontal padding for the UI frame (default 3)
-	PaddingV         int                          // vertical padding for the UI frame (default 1)
-	AudioDevice      string                       // preferred audio output device name (empty = system default)
-	Playlist         string                       // local TOML playlist name to load on startup
-	InitialDirectory string                       // initial directory for the file browser
-	LyricsOffsetMs   int                          // lyric timestamp adjustment in ms (-10000..10000), applied to all sources
-	Navidrome        NavidromeConfig              // optional Navidrome/Subsonic server credentials
-	Lyrion           LyrionConfig                 // optional Lyrion Music Server (LMS) instance
-	Bandcamp         BandcampConfig               // optional Bandcamp Subsonic API credentials
-	Spotify          SpotifyConfig                // optional Spotify provider (requires Premium)
-	Qobuz            QobuzConfig                  // optional Qobuz provider (requires subscription)
-	Tidal            TidalConfig                  // optional Tidal provider (requires subscription)
-	YouTubeMusic     YouTubeMusicConfig           // optional YouTube Music provider
-	Plex             PlexConfig                   // optional Plex Media Server credentials
-	Jellyfin         JellyfinConfig               // optional Jellyfin server credentials
-	Emby             EmbyConfig                   // optional Emby server credentials
-	Audiobookshelf   AudiobookshelfConfig         // optional Audiobookshelf server credentials
-	Radio            RadioConfig                  // built-in Radio provider settings
-	Podcast          PodcastConfig                // built-in podcast directory settings
-	SoundCloud       SoundCloudConfig             // SoundCloud provider (opt-in via enabled = true)
-	Mixcloud         MixcloudConfig               // Mixcloud provider (opt-in via enabled = true)
-	NetEase          NetEaseConfig                // NetEase Cloud Music provider (opt-in via enabled = true)
-	Yandex           YandexConfig                 // Yandex Music provider (opt-in via enabled = true)
-	Plugins          map[string]map[string]string // per-plugin config from [plugins.*] sections
-	LogLevel         string                       // log level: debug, info, warn, error (default "info")
-	LowPower         bool                         // reduce CPU by lowering UI cadence and disabling visualization
+	Downloads            DownloadsConfig
+	Volume               float64     // dB, clamped at runtime to [VolumeMin, +6]
+	VolumeMin            float64     // dB floor, range [-90, 0]; default -50
+	VisVolumeLinked      bool        // when true, visualizer bar height follows volume; default true
+	EQ                   [10]float64 // per-band gain in dB, range [-12, +12]
+	EQPreset             string      // preset name, or "" for custom
+	Repeat               string      // "off", "all", or "one"
+	Shuffle              bool
+	Mono                 bool
+	Speed                float64                      // playback speed ratio: 0.25–2.0 (default 1.0)
+	AutoPlay             bool                         // start playback automatically on launch (radio streams, CLI tracks)
+	SeekStepLarge        int                          // seconds for Shift+Left/Right seek jumps
+	Provider             string                       // default provider key, a value that --provider accepts (default "cliamp")
+	Theme                string                       // theme name, or "" for ANSI default
+	Visualizer           string                       // visualizer mode name, or "" for default (Bars)
+	VisRows              int                          // visualizer height in rows at the full layout tier, or 0 for the built-in default
+	SampleRate           int                          // output sample rate: 22050, 44100, 48000, 96000, 192000
+	BufferMs             int                          // speaker buffer in milliseconds (50-5000)
+	ResampleQuality      int                          // beep resample quality factor (1–4)
+	BitDepth             int                          // PCM bit depth for FFmpeg output: 16 or 32
+	Simplified           bool                         // simplified playback view: track summary and time strip
+	HideHelpBar          bool                         // hide the key-binding hint bar above the status line
+	HideSettingsPane     bool                         // close the settings pane beside the playlist
+	ShowMetadata         bool                         // expand highlighted-track metadata below settings (default false)
+	DesktopNotifications bool                         // show a desktop notification when a track starts
+	Expanded             bool                         // start with the playlist expanded (the Ctrl+X state)
+	PaddingH             int                          // horizontal padding for the UI frame (default 3)
+	PaddingV             int                          // vertical padding for the UI frame (default 1)
+	AudioDevice          string                       // preferred audio output device name (empty = system default)
+	Playlist             string                       // local TOML playlist name to load on startup
+	InitialDirectory     string                       // initial directory for the file browser
+	LyricsOffsetMs       int                          // lyric timestamp adjustment in ms (-10000..10000), applied to all sources
+	Navidrome            NavidromeConfig              // optional Navidrome/Subsonic server credentials
+	Lyrion               LyrionConfig                 // optional Lyrion Music Server (LMS) instance
+	Bandcamp             BandcampConfig               // optional Bandcamp Subsonic API credentials
+	Spotify              SpotifyConfig                // optional Spotify provider (requires Premium)
+	Qobuz                QobuzConfig                  // optional Qobuz provider (requires subscription)
+	Tidal                TidalConfig                  // optional Tidal provider (requires subscription)
+	YouTubeMusic         YouTubeMusicConfig           // optional YouTube Music provider
+	Plex                 PlexConfig                   // optional Plex Media Server credentials
+	Jellyfin             JellyfinConfig               // optional Jellyfin server credentials
+	Emby                 EmbyConfig                   // optional Emby server credentials
+	Audiobookshelf       AudiobookshelfConfig         // optional Audiobookshelf server credentials
+	Radio                RadioConfig                  // built-in Radio provider settings
+	Podcast              PodcastConfig                // built-in podcast directory settings
+	SoundCloud           SoundCloudConfig             // SoundCloud provider (opt-in via enabled = true)
+	Mixcloud             MixcloudConfig               // Mixcloud provider (opt-in via enabled = true)
+	NetEase              NetEaseConfig                // NetEase Cloud Music provider (opt-in via enabled = true)
+	Yandex               YandexConfig                 // Yandex Music provider (opt-in via enabled = true)
+	Plugins              map[string]map[string]string // per-plugin config from [plugins.*] sections
+	LogLevel             string                       // log level: debug, info, warn, error (default "info")
+	LowPower             bool                         // reduce CPU by lowering UI cadence and disabling visualization
 }
 
 // defaultConfig returns a Config with sensible defaults.
@@ -817,21 +818,22 @@ type Config struct {
 // that require a specific rate (commonly 48 kHz) work out of the box.
 func defaultConfig() Config {
 	return Config{
-		VolumeMin:       -50,
-		VisVolumeLinked: true,
-		Repeat:          "off",
-		AutoPlay:        false,
-		Speed:           1.0,
-		SeekStepLarge:   30,
-		SampleRate:      0,
-		BufferMs:        250,
-		ResampleQuality: 4,
-		BitDepth:        16,
-		PaddingH:        3,
-		PaddingV:        1,
-		Spotify:         SpotifyConfig{Bitrate: 320},
-		Qobuz:           QobuzConfig{Quality: 6},
-		LogLevel:        "info",
+		VolumeMin:            -50,
+		VisVolumeLinked:      true,
+		Repeat:               "off",
+		AutoPlay:             false,
+		Speed:                1.0,
+		SeekStepLarge:        30,
+		SampleRate:           0,
+		BufferMs:             250,
+		ResampleQuality:      4,
+		BitDepth:             16,
+		DesktopNotifications: true,
+		PaddingH:             3,
+		PaddingV:             1,
+		Spotify:              SpotifyConfig{Bitrate: 320},
+		Qobuz:                QobuzConfig{Quality: 6},
+		LogLevel:             "info",
 	}
 }
 
@@ -1094,6 +1096,10 @@ func (c *Config) setTopLevel(key, val string) {
 	case "show_metadata":
 		if v, ok := parseBool(val); ok {
 			c.ShowMetadata = v
+		}
+	case "desktop_notifications":
+		if v, ok := parseBool(val); ok {
+			c.DesktopNotifications = v
 		}
 	case "expanded":
 		if v, ok := parseBool(val); ok {
