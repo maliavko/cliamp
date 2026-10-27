@@ -27,29 +27,18 @@ Updated: 2026-10-25
 
 Updated: 2026-10-27
 
-The browser sign-in, server discovery, playback reporting, list refresh,
-visible Plex like state, cover art, and play-context restore are complete.
-Remaining work, in suggested order:
+The browser sign-in and sign-out, server discovery, playback reporting, list
+refresh, visible Plex like state, cover art, and play-context restore are
+complete. Playlist write-back, switching servers without a new sign-in, and
+transcoding are out of scope. Remaining work, in suggested order:
 
-- [ ] Fix `plex: timeline: HTTP 400 Bad Request` from progress reports; it
-  shows in cliamp.log apart from network drops (EOF, timeouts), so the
-  `/:/timeline` request itself is likely wrong for some tracks.
 - [ ] Scrub legacy Plex stream URLs carrying `X-Plex-Token` from history,
   resume state, local playlists, and favorites. Upstream builds stored the
   token in track paths; feat/plex no longer does, but old entries remain.
-
 - [ ] Consider a debounced selected-album cover preview in provider browsers.
   Reuse the now-playing artwork cache and renderer, cancel stale selection
   loads, and add it only where it does not reduce useful list space.
 - [ ] Rediscover and fail over to another local, remote, or relay connection
   automatically when the active Plex route dies during a running session.
-- [ ] Add playlist write-back: create and delete playlists, add and remove
-  tracks, and reorder playlist entries on Plex.
 - [ ] Add artist browsing (`Artists -> Albums -> Tracks`) instead of relying
   only on the flat album list and search.
-- [ ] Allow switching to another discovered Plex server without repeating
-  browser authorization.
-- [ ] Add account lifecycle controls: sign out, replace an account, and safely
-  remove locally stored Plex credentials.
-- [ ] Add configurable remote-playback quality and optional Plex transcoding
-  for slow links and bandwidth-limited relay connections.
