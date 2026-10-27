@@ -647,7 +647,7 @@ func (m Model) renderSpectrum() string {
 		return ""
 	}
 	cover := m.renderCover()
-	if cover != "" && m.cover.cols > 0 && m.cover.rows == m.layout.coverRows {
+	if cover != "" && !m.fullVis && m.cover.cols > 0 && m.cover.rows == m.layout.coverRows {
 		visWidth := m.layout.panelWidth - m.cover.cols - 1
 		visualizer := m.renderSpectrumAt(visWidth)
 		return joinPanesRow(
@@ -688,6 +688,10 @@ func (m Model) renderSpectrumAt(width int) string {
 // renderFullVisualizer renders a full-screen view showing only the visualizer
 // with minimal track info and a seek bar.
 func (m Model) renderFullVisualizer() string {
+	cover := ""
+	if cols, rows, _, ok := m.coverGeometry(); ok && m.cover.cols == cols && m.cover.rows == rows {
+		cover = m.renderCover()
+	}
 	sections := []string{
 		m.fullVisTopLine(),
 		m.renderTimeStatus(),
@@ -705,11 +709,36 @@ func (m Model) renderFullVisualizer() string {
 				helpKey("<>", "Trk ")+
 				helpKey("+-", "Vol ")+
 				helpKey("t", "Title ")+
+				helpKey("^I", "Cover ")+
 				helpKey("?", "Keys"),
 		)
 	}
 
-	return strings.Join(sections, "\n")
+	frame := strings.Join(sections, "\n")
+	if cover == "" {
+		return frame
+	}
+	// The visualizer keeps the full width; the cover covers its top-right
+	// corner, flush with the playback status above it.
+	return overlayRight(frame, cover, fullVisCoverTop, m.layout.panelWidth-m.cover.cols-1)
+}
+
+// overlayRight places block over the right end of frame's lines from line
+// top, after a one-column gap. Each covered line is clipped to leftWidth.
+func overlayRight(frame, block string, top, leftWidth int) string {
+	lines := strings.Split(frame, "\n")
+	for j, coverLine := range strings.Split(block, "\n") {
+		i := top + j
+		if i >= len(lines) {
+			break
+		}
+		left := ansi.Truncate(lines[i], leftWidth, "")
+		if pad := leftWidth - lipgloss.Width(left); pad > 0 {
+			left += strings.Repeat(" ", pad)
+		}
+		lines[i] = left + " " + coverLine
+	}
+	return strings.Join(lines, "\n")
 }
 
 // fullVisTopLine names what is playing, or just the source when the track has

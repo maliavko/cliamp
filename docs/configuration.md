@@ -91,10 +91,13 @@ visualizer = "Bars"
 
 # Album cover beside the visualizer when Metadata is open: auto, on, or off
 # (default: auto).
-# Auto uses native terminal graphics in Kitty, Ghostty, and WezTerm, and an
-# ANSI half-block fallback in terminals without graphics support.
+# Auto shows the cover only where native terminal graphics work: Kitty,
+# Ghostty, and WezTerm. Other terminals show no cover; "on" forces a blurry
+# ANSI half-block fallback there.
 # The square cover grows to twice the visualizer height when space permits.
 # The pane is shown only in the full layout (at least 80x24).
+# The full-screen visualizer (V) shows the same cover in its top-right corner,
+# below the playback status, when Ctrl+I is on there.
 # The track info overlay (i) also shows the highlighted item's cover beside
 # its fields, as tall as the fields and in the image's own proportions.
 cover_art = "auto"
