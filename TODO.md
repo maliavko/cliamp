@@ -25,10 +25,18 @@ Updated: 2026-10-25
 
 ## Plex follow-ups
 
-Updated: 2026-10-26
+Updated: 2026-10-27
 
-The browser sign-in, server discovery, playback reporting, list refresh, and
-visible Plex like state are complete. Remaining work, in suggested order:
+The browser sign-in, server discovery, playback reporting, list refresh,
+visible Plex like state, cover art, and play-context restore are complete.
+Remaining work, in suggested order:
+
+- [ ] Fix `plex: timeline: HTTP 400 Bad Request` from progress reports; it
+  shows in cliamp.log apart from network drops (EOF, timeouts), so the
+  `/:/timeline` request itself is likely wrong for some tracks.
+- [ ] Scrub legacy Plex stream URLs carrying `X-Plex-Token` from history,
+  resume state, local playlists, and favorites. Upstream builds stored the
+  token in track paths; feat/plex no longer does, but old entries remain.
 
 - [ ] Consider a debounced selected-album cover preview in provider browsers.
   Reuse the now-playing artwork cache and renderer, cancel stale selection
@@ -39,8 +47,6 @@ visible Plex like state are complete. Remaining work, in suggested order:
   tracks, and reorder playlist entries on Plex.
 - [ ] Add artist browsing (`Artists -> Albums -> Tracks`) instead of relying
   only on the flat album list and search.
-- [ ] Restore the last open Plex album or playlist and playback position after
-  restart, matching the Jellyfin and Emby experience.
 - [ ] Allow switching to another discovered Plex server without repeating
   browser authorization.
 - [ ] Add account lifecycle controls: sign out, replace an account, and safely
