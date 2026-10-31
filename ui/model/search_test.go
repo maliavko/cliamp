@@ -33,6 +33,9 @@ func TestUpdateProvSearchFuzzy(t *testing.T) {
 			for _, i := range m.provSearch.results {
 				got = append(got, lists[i].Name)
 			}
+			// internal/fuzzy tests the ranking; this checks which entries match.
+			slices.Sort(got)
+			slices.Sort(tt.want)
 			if !slices.Equal(got, tt.want) {
 				t.Fatalf("results = %q, want %q", got, tt.want)
 			}
