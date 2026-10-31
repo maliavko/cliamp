@@ -366,6 +366,9 @@ func clampedScroll(scroll, cursor, count, budget int) int {
 func (m Model) renderInfoBody() string {
 	budget := m.effectivePlaylistVisible()
 	cols, rows, _, coverVisible := m.infoCoverGeometry()
+	if coverVisible {
+		budget -= infoCoverTop
+	}
 	width := m.infoWidth()
 	if coverVisible {
 		width -= infoCoverMargin + cols + infoCoverGap
@@ -383,7 +386,7 @@ func (m Model) renderInfoBody() string {
 	if m.infoCover.cols == cols && m.infoCover.rows == rows {
 		cover = m.infoCover.render()
 	}
-	return joinPanesRow(
+	return strings.Repeat("\n", infoCoverTop) + joinPanesRow(
 		[]string{"", cover, "", text},
 		[]int{infoCoverMargin, cols, infoCoverGap, width},
 		budget,
@@ -447,7 +450,7 @@ func infoFieldLines(label, value string, width int) []string {
 }
 
 func (m *Model) infoMaybeAdjustScroll() {
-	m.info.scroll = min(m.info.scroll, max(0, len(m.infoLines())-m.effectivePlaylistVisible()))
+	m.info.scroll = min(m.info.scroll, max(0, len(m.infoLines())-m.infoBudget()))
 }
 
 // — URL input —

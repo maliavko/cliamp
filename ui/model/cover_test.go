@@ -328,7 +328,7 @@ func TestInfoCoverShowsHighlightedTrack(t *testing.T) {
 	if !visible {
 		t.Fatal("info cover geometry is hidden in a wide terminal")
 	}
-	if fields := len(m.infoLines()); rows != min(fields, m.effectivePlaylistVisible()) {
+	if fields := len(m.infoLines()); rows != min(fields, m.effectivePlaylistVisible()-infoCoverTop) {
 		t.Fatalf("cover rows = %d, want the %d field lines", rows, fields)
 	}
 	cellW, cellH := m.cellSize()
@@ -344,6 +344,9 @@ func TestInfoCoverShowsHighlightedTrack(t *testing.T) {
 	body := m.renderInfoBody()
 	if !strings.Contains(body, "▀") || !strings.Contains(body, "Selected") {
 		t.Fatalf("info body lacks the cover or the fields:\n%s", body)
+	}
+	if first, _, _ := strings.Cut(body, "\n"); strings.TrimSpace(first) != "" {
+		t.Fatalf("info body starts with %q, want a blank row above the cover", first)
 	}
 	if m.renderCover() != "" {
 		t.Fatal("info cover leaked into the playing-track pane")
