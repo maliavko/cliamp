@@ -616,6 +616,24 @@ func TestListCoverMatchesMainViewSize(t *testing.T) {
 	}
 }
 
+// The browser cover keeps its size while no track cover is loaded, as when
+// playback is stopped.
+func TestListCoverSizeWithoutTrackCover(t *testing.T) {
+	m, _ := listCoverTestModel(t)
+	m.listCover.local = "file:///list.png"
+	m.focus = focusProvider
+
+	m.cover.local = "file:///playing.png"
+	m.recomputeLayout()
+	_, want, _, _ := m.listCoverGeometry()
+
+	m.cover.local = ""
+	m.recomputeLayout()
+	if _, rows, _, ok := m.listCoverGeometry(); !ok || rows != want {
+		t.Fatalf("browser cover rows without a track cover = %d (ok %v), want %d", rows, ok, want)
+	}
+}
+
 func TestListCoverHiddenWithoutMetadataOrGraphics(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("TERM_PROGRAM", "")
