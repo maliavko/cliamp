@@ -14,3 +14,11 @@ of scope. Remaining work, in suggested order:
   automatically when the active Plex route dies during a running session.
 - [ ] Add artist browsing (`Artists -> Albums -> Tracks`) instead of relying
   only on the flat album list and search.
+
+## Navigation ideas
+
+- [ ] "Go to album": from a track in the queue or search results, open its
+  album in the provider browser. Think through the key, the providers that
+  can do it, and where Esc returns.
+- [ ] "Go to artist": the same for the track's artist, once artist browsing
+  exists.
