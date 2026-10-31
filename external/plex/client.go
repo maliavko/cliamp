@@ -124,6 +124,7 @@ type Track struct {
 	Title       string
 	ArtistName  string // grandparentTitle
 	AlbumName   string // parentTitle
+	AlbumKey    string // parentRatingKey
 	Year        int
 	TrackNumber int    // index field in Plex API
 	Duration    int    // milliseconds
@@ -704,6 +705,7 @@ type trackJSON struct {
 	Title            string  `json:"title"`
 	GrandparentTitle string  `json:"grandparentTitle"` // artist
 	ParentTitle      string  `json:"parentTitle"`      // album
+	ParentRatingKey  string  `json:"parentRatingKey"`  // album
 	Year             int     `json:"year"`
 	Index            int     `json:"index"`    // track number within album
 	Duration         int     `json:"duration"` // milliseconds
@@ -731,6 +733,7 @@ func trackFromJSON(m trackJSON) Track {
 		Title:       m.Title,
 		ArtistName:  m.GrandparentTitle,
 		AlbumName:   m.ParentTitle,
+		AlbumKey:    m.ParentRatingKey,
 		Year:        m.Year,
 		TrackNumber: m.Index,
 		Duration:    m.Duration,
