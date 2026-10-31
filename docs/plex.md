@@ -123,7 +123,8 @@ Selecting a station asks the server for a new play queue, as Plexamp does, and
 loads it 30 tracks at a time: when the last loaded track starts, the next 30
 of the same queue are appended, so the station plays on without end. Press
 `Ctrl+R` while the station is open for a fresh selection. The `stations`
-setting picks which stations appear.
+setting picks which stations appear. Plex sends no artwork for stations, so
+cliamp shows a built-in radio cover for them.
 
 On a Plex track in the playlist, `Alt+O` opens its album: the queue becomes
 the album, the cursor lands on the track, and playback goes on; `Ctrl+Z`
