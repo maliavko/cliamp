@@ -2,7 +2,10 @@ package model
 
 import (
 	"context"
+	"errors"
 	"math"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -182,7 +185,16 @@ func (m *Model) ensureInfoCover() tea.Cmd {
 		c.reset()
 		return nil
 	}
+	// Playback reads the cover embedded in a local file; the playlist row
+	// does not carry it.
+	if playing, _ := m.currentPlaybackTrack(); playing.Path == track.Path && track.AlbumArtURL == "" {
+		track.AlbumArtURL = playing.AlbumArtURL
+	}
 	key, source, fetcher, ok := m.artworkSource(track)
+	fetch := trackArtwork(fetcher, track)
+	if !ok && localFileTrack(track) {
+		key, fetch, ok = track.Path+"\x00embedded", embeddedArtwork(track), true
+	}
 	if !ok {
 		c.reset()
 		return nil
@@ -194,7 +206,7 @@ func (m *Model) ensureInfoCover() tea.Cmd {
 			c.local = m.cover.local
 			c.aspect = m.cover.aspect
 		} else {
-			return loadCoverCmd(coverSlotInfo, key, source, trackArtwork(fetcher, track), c.loadGen)
+			return loadCoverCmd(coverSlotInfo, key, source, fetch, c.loadGen)
 		}
 	}
 	cols, rows, protocol, visible := m.infoCoverGeometry()
@@ -363,6 +375,30 @@ func trackArtwork(fetcher provider.ArtworkFetcher, track playlist.Track) func(co
 		return nil
 	}
 	return func(ctx context.Context) ([]byte, error) { return fetcher.FetchArtwork(ctx, track) }
+}
+
+var errNoEmbeddedArt = errors.New("no embedded cover")
+
+// localFileTrack reports whether track is a file on this machine, whose tags
+// can hold a cover.
+func localFileTrack(track playlist.Track) bool {
+	return track.Path != "" && !track.Stream && !playlist.IsURL(track.Path) && !strings.HasPrefix(track.Path, "ssh://")
+}
+
+// embeddedArtwork reads the cover embedded in the tags of a local file. It
+// runs from a command goroutine, since reading the tags is file I/O.
+func embeddedArtwork(track playlist.Track) func(context.Context) ([]byte, error) {
+	return func(context.Context) ([]byte, error) {
+		art := playlist.RefreshEmbeddedMetadata(track).AlbumArtURL
+		if art == "" {
+			return nil, errNoEmbeddedArt
+		}
+		u, err := url.Parse(art)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(u.Path)
+	}
 }
 
 // loadCoverCmd resolves source through the cache, or, without a source,
@@ -612,8 +648,6 @@ func (m *Model) handleCoverRendered(msg coverRenderedMsg) {
 	}
 }
 
-func (m *Model) clearCoverRender() { m.cover.clearRender() }
-
 func (c *coverState) clearRender() {
 	if c.imageID == 0 && c.block == "" && c.protocol == "" &&
 		c.cols == 0 && c.rows == 0 && !c.rendering {
@@ -631,8 +665,6 @@ func (c *coverState) clearRender() {
 	// Reject an in-flight render whose dimensions no longer apply.
 	c.renderGen++
 }
-
-func (m *Model) resetCover() { m.cover.reset() }
 
 func (c *coverState) reset() {
 	if c.key == "" && c.local == "" && !c.failed && !c.loading &&

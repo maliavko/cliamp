@@ -97,7 +97,8 @@ visualizer = "Bars"
 # Auto shows the cover only where native terminal graphics work: Kitty,
 # Ghostty, and WezTerm. Other terminals show no cover; "on" forces a blurry
 # ANSI half-block fallback there.
-# The square cover grows to twice the visualizer height when space permits.
+# The square cover is as wide as the Settings pane, and the visualizer beside
+# it takes the same rows, as far as space permits.
 # The pane is shown only in the full layout (at least 80x24).
 # A provider browser that describes its entries (Plex) shows a Metadata column
 # with the cover and details of the album or playlist under the cursor.

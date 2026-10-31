@@ -398,6 +398,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleTrackFavoriteSynced(msg)
 		return m, nil
 
+	case trackFavoritesLoadedMsg:
+		// The provider now knows the state; the redraw shows it.
+		return m, nil
+
 	case coverLoadedMsg:
 		m.handleCoverLoaded(msg)
 		return m, nil
@@ -408,10 +412,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case listCoverDueMsg:
 		return m, m.handleListCoverDue(msg)
-
-	case trackFavoritesLoadedMsg:
-		// The provider now knows the state; the redraw shows it.
-		return m, nil
 
 	case ShowStatusMsg:
 		ttl := statusTTLDefault

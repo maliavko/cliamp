@@ -92,15 +92,15 @@ func TestResolveDownloadsImage(t *testing.T) {
 
 func TestStoreForKeyCanBeLookedUp(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	want, err := StoreForKey("plex:track:42", testPNG(t))
+	want, err := StoreForKey("provider:track:42", testPNG(t))
 	if err != nil {
 		t.Fatalf("StoreForKey: %v", err)
 	}
-	got, ok := Lookup("plex:track:42")
+	got, ok := Lookup("provider:track:42")
 	if !ok || got != want {
 		t.Fatalf("Lookup = (%q,%v), want (%q,true)", got, ok, want)
 	}
-	if _, ok := Lookup("plex:track:other"); ok {
+	if _, ok := Lookup("provider:track:other"); ok {
 		t.Fatal("Lookup found artwork under a different key")
 	}
 }

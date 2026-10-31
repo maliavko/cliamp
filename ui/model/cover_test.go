@@ -683,3 +683,57 @@ func TestColumnCoverCols(t *testing.T) {
 		}
 	}
 }
+
+// writeTaggedMP3 writes a file that holds only an ID3v2.3 tag with a title
+// and the PNG at cover as its front cover.
+func writeTaggedMP3(t *testing.T, cover string) string {
+	t.Helper()
+	u, err := url.Parse(cover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, err := os.ReadFile(u.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := func(id string, body []byte) []byte {
+		n := len(body)
+		return append([]byte{id[0], id[1], id[2], id[3], byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n), 0, 0}, body...)
+	}
+	// Text frames and APIC start with the text encoding; APIC then names
+	// the MIME type, the picture type (3, front cover) and a description.
+	body := frame("TIT2", []byte("\x00Tagged"))
+	body = append(body, frame("APIC", append([]byte("\x00image/png\x00\x03\x00"), png...))...)
+	n := len(body)
+	header := []byte{'I', 'D', '3', 3, 0, 0, byte(n >> 21 & 0x7f), byte(n >> 14 & 0x7f), byte(n >> 7 & 0x7f), byte(n & 0x7f)}
+	path := filepath.Join(t.TempDir(), "tagged.mp3")
+	if err := os.WriteFile(path, append(header, body...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The info overlay shows the cover embedded in a local file that is not
+// playing: the playlist row does not carry it, so the overlay reads the tags.
+func TestInfoCoverReadsEmbeddedArt(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("HOME", t.TempDir())
+	m := coverTestModel(t, 120, 30)
+	path := writeTaggedMP3(t, writeCoverPNG(t, "embedded.png", 4, 4))
+	m.playlist.Replace([]playlist.Track{{Path: "other.mp3", Title: "Other"}, {Path: path, Title: "Tagged"}})
+	m.plCursor = 1
+	m.info.visible = true
+
+	load := m.ensureInfoCover()
+	if load == nil || !m.infoCover.loading {
+		t.Fatal("info overlay did not load the embedded cover")
+	}
+	loaded, ok := load().(coverLoadedMsg)
+	if !ok || loaded.err != nil || loaded.local == "" {
+		t.Fatalf("load = %#v, want the embedded cover", loaded)
+	}
+	m.handleCoverLoaded(loaded)
+	if m.infoCover.aspect != 1 {
+		t.Fatalf("info cover aspect = %v, want 1 for a square image", m.infoCover.aspect)
+	}
+}
