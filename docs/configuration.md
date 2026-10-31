@@ -97,6 +97,8 @@ visualizer = "Bars"
 # The square cover is as wide as the Settings pane, and the visualizer beside
 # it takes the same rows, as far as space permits.
 # The pane is shown only in the full layout (at least 80x24).
+# A provider browser that describes its entries (Plex) shows a Metadata column
+# with the cover and details of the album or playlist under the cursor.
 # The track info overlay (i) also shows the highlighted item's cover beside
 # its fields, as tall as the fields and in the image's own proportions.
 cover_art = "auto"

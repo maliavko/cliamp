@@ -30,7 +30,19 @@ type coverSlot int
 const (
 	coverSlotPlaying coverSlot = iota
 	coverSlotInfo
+	coverSlotList
 )
+
+// listCoverDelay is how long the provider browser cursor rests on an entry
+// before its cover loads, so scrolling a long list sends no requests.
+const listCoverDelay = 200 * time.Millisecond
+
+// listCoverDueMsg starts the cover load of a browser entry once the cursor
+// has rested on it. gen ties it to the startLoad that scheduled it.
+type listCoverDueMsg struct {
+	key string
+	gen uint64
+}
 
 type coverState struct {
 	mode string
@@ -425,8 +437,8 @@ func loadCoverCmd(slot coverSlot, key, source string, fetch func(context.Context
 func renderCoverCmd(slot coverSlot, key, source string, cols, rows int, protocol string, reuseID int, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		msg := coverRenderedMsg{slot: slot, key: key, gen: gen, cols: cols, rows: rows, protocol: protocol}
-		// The playing-track cover fills a box as wide as the settings column;
-		// the info cover keeps its box to the image aspect.
+		// The playing-track and browser covers fill a box as wide as their
+		// column; the info cover keeps its box to the image aspect.
 		fill := slot != coverSlotInfo
 		if protocol == "kitty" {
 			show := kittyimg.Show
@@ -451,8 +463,151 @@ func (m *Model) coverFor(slot coverSlot) *coverState {
 	switch slot {
 	case coverSlotInfo:
 		return &m.infoCover
+	case coverSlotList:
+		return &m.listCover
 	}
 	return &m.cover
+}
+
+// selectedBrowserList returns the provider browser entry under the cursor,
+// in the filtered results while a filter is active.
+func (m Model) selectedBrowserList() (playlist.PlaylistInfo, bool) {
+	if m.provPane.loading {
+		return playlist.PlaylistInfo{}, false
+	}
+	index := m.provPane.cursor
+	if m.provSearch.active {
+		if m.provSearch.cursor < 0 || m.provSearch.cursor >= len(m.provSearch.results) {
+			return playlist.PlaylistInfo{}, false
+		}
+		index = m.provSearch.results[m.provSearch.cursor]
+	}
+	if index < 0 || index >= len(m.provPane.lists) {
+		return playlist.PlaylistInfo{}, false
+	}
+	return m.provPane.lists[index], true
+}
+
+// listCoverSource returns the provider browser entry under the cursor and the
+// provider that serves its cover, when the browser column shows a cover.
+func (m *Model) listCoverSource() (playlist.PlaylistInfo, provider.ListArtworkFetcher, bool) {
+	if !m.listColumnShowsCover() || m.quitting {
+		return playlist.PlaylistInfo{}, nil, false
+	}
+	list, ok := m.selectedBrowserList()
+	if !ok {
+		return playlist.PlaylistInfo{}, nil, false
+	}
+	fetcher := m.provider.(provider.ListArtworkFetcher)
+	if !fetcher.CanFetchListArtwork(list) {
+		return playlist.PlaylistInfo{}, nil, false
+	}
+	return list, fetcher, true
+}
+
+func listCoverKey(providerName string, list playlist.PlaylistInfo) string {
+	return "list\x00" + providerName + "\x00" + list.ID
+}
+
+// ensureListCover shows the cover of the provider browser entry under the
+// cursor. A new entry waits listCoverDelay before it loads; leaving the
+// browser drops the cover.
+func (m *Model) ensureListCover() tea.Cmd {
+	c := &m.listCover
+	list, _, ok := m.listCoverSource()
+	if !ok {
+		c.reset()
+		return nil
+	}
+	key := listCoverKey(m.provider.Name(), list)
+	if key != c.key {
+		c.startLoad(key)
+		gen := c.loadGen
+		return tea.Tick(listCoverDelay, func(time.Time) tea.Msg { return listCoverDueMsg{key: key, gen: gen} })
+	}
+	cols, rows, protocol, visible := m.listCoverGeometry()
+	if !visible {
+		c.clearRender()
+		return nil
+	}
+	return c.renderCmd(coverSlotList, cols, rows, protocol)
+}
+
+// handleListCoverDue loads the entry cover if the cursor is still on it.
+func (m *Model) handleListCoverDue(msg listCoverDueMsg) tea.Cmd {
+	c := &m.listCover
+	if msg.key != c.key || msg.gen != c.loadGen || !c.loading {
+		return nil
+	}
+	list, fetcher, ok := m.listCoverSource()
+	if !ok || listCoverKey(m.provider.Name(), list) != msg.key {
+		return nil
+	}
+	fetch := func(ctx context.Context) ([]byte, error) { return fetcher.FetchListArtwork(ctx, list) }
+	return loadCoverCmd(coverSlotList, msg.key, "", fetch, msg.gen)
+}
+
+// listCoverTop is the first list body line of the provider browser cover.
+// The column has its own header, as the settings pane does, so the cover
+// starts right under it; the entry's description follows the cover.
+const listCoverTop = 0
+
+// listColumn is the provider browser column right of the list.
+type listColumn struct {
+	listWidth int // width of the list left of the gutter
+	width     int // column width, as the main view's settings pane
+	coverCols int // 0 when the column has no room for a cover
+	coverRows int
+}
+
+// listColumnGeometry sizes the provider browser column like the main view's
+// settings pane, so the list keeps one width while the cursor moves. Its
+// cover has the main view's cover size, shrunk to the column width. It shows
+// with covers on (Ctrl+I) for providers that describe or picture their
+// entries.
+func (m Model) listColumnGeometry() (listColumn, bool) {
+	if m.focus != focusProvider || m.activeScreen() != screenMain || !m.showMetadata || m.headless || m.provider == nil {
+		return listColumn{}, false
+	}
+	_, art := m.provider.(provider.ListArtworkFetcher)
+	_, details := m.provider.(provider.ListDetailer)
+	if !art && !details {
+		return listColumn{}, false
+	}
+	c := listColumn{width: sideColumnWidth(m.layout.panelWidth)}
+	c.listWidth = m.layout.panelWidth - columnGutterWidth - c.width
+	if c.listWidth < playlistMinWidth || m.effectivePlaylistVisible() <= listCoverTop {
+		return listColumn{}, false
+	}
+	cellWidth, cellHeight := m.cellSize()
+	// As wide as the column when the rows allow it, so the cover ends flush
+	// with the column; narrower when they do not.
+	rows := min(m.layout.mainCoverRows, m.effectivePlaylistVisible()-listCoverTop,
+		squareCoverRows(c.width, cellWidth, cellHeight))
+	if rows >= coverMinRows {
+		c.coverRows = rows
+		c.coverCols = columnCoverCols(rows, c.width, cellWidth, cellHeight)
+	}
+	return c, true
+}
+
+// listColumnShowsCover reports whether the browser column reserves a cover.
+func (m Model) listColumnShowsCover() bool {
+	c, ok := m.listColumnGeometry()
+	if !ok || c.coverRows == 0 || !m.coverEnabled() {
+		return false
+	}
+	_, art := m.provider.(provider.ListArtworkFetcher)
+	return art
+}
+
+// listCoverGeometry sizes the browser cover from the column.
+func (m Model) listCoverGeometry() (cols, rows int, protocol string, visible bool) {
+	if m.listCover.local == "" || !m.listColumnShowsCover() {
+		return 0, 0, "", false
+	}
+	c, _ := m.listColumnGeometry()
+	return c.coverCols, c.coverRows, coverProtocol(), true
 }
 
 func (m *Model) handleCoverLoaded(msg coverLoadedMsg) {
