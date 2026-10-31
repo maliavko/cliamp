@@ -282,9 +282,10 @@ func coverCols(rows int, aspect, cellWidth, cellHeight float64) int {
 	return max(1, int(math.Round(float64(rows)*aspect*cellHeight/cellWidth)))
 }
 
-// Info overlay layout: the cover sits after a left margin, then a gap, then
-// the field text with its usual two-space indent.
+// Info overlay layout: a blank row under the header, then the cover after a
+// left margin, a gap, and the field text with its usual two-space indent.
 const (
+	infoCoverTop    = 1
 	infoCoverMargin = 2
 	infoCoverGap    = 1
 	infoMinText     = 30
@@ -300,7 +301,7 @@ func (m Model) infoCoverGeometry() (cols, rows int, protocol string, visible boo
 	if !m.info.visible || c.local == "" || c.aspect <= 0 {
 		return 0, 0, "", false
 	}
-	budget := m.effectivePlaylistVisible()
+	budget := m.effectivePlaylistVisible() - infoCoverTop
 	width := m.infoWidth()
 	cellWidth, cellHeight := m.cellSize()
 	rows = min(budget, len(m.infoLinesAt(width)))
@@ -316,6 +317,15 @@ func (m Model) infoCoverGeometry() (cols, rows int, protocol string, visible boo
 		}
 		rows = next
 	}
+}
+
+// infoBudget is the number of field lines the info body shows: the blank
+// row above a cover takes one.
+func (m Model) infoBudget() int {
+	if _, _, _, visible := m.infoCoverGeometry(); visible {
+		return m.effectivePlaylistVisible() - infoCoverTop
+	}
+	return m.effectivePlaylistVisible()
 }
 
 // infoTextWidth is the width left for the field text beside the cover.
