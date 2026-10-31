@@ -320,8 +320,8 @@ func TestMetadataLayoutAndFocusBudget(t *testing.T) {
 
 func TestMetadataTinyRowBudgets(t *testing.T) {
 	for _, tt := range []struct{ providers, rows, metadata int }{
-		{2, -1, 0}, {2, 0, 0}, {2, 1, 0}, {2, 2, 0}, {2, 6, 0}, {2, 8, 0},
-		{2, 9, 3}, {2, 14, 8}, {1, 7, 0}, {1, 8, 3},
+		{2, -1, 0}, {2, 0, 0}, {2, 1, 0}, {2, 2, 0}, {2, 6, 0}, {2, 9, 0},
+		{2, 10, 4}, {2, 14, 8}, {2, 16, 9}, {1, 8, 0}, {1, 9, 4},
 	} {
 		t.Run(fmt.Sprintf("providers=%d/rows=%d", tt.providers, tt.rows), func(t *testing.T) {
 			m := newColumnTestModel(100, 30)
@@ -503,7 +503,7 @@ func TestMetadataPaneAlignsValues(t *testing.T) {
 	m.playlist.SetTrack(0, playlist.Track{Path: "a.mp3", Title: "Song", Artist: "Band", Album: "Record", Year: 2001})
 	m.showMetadata = true
 	var cols []int
-	for _, line := range m.renderMetadataPane(8)[1:] {
+	for _, line := range m.renderMetadataPane(9)[2:] {
 		line = ansi.Strip(line)
 		for _, value := range []string{"Song", "Band", "Record", "2001"} {
 			if i := strings.Index(line, " "+value); i >= 0 {

@@ -11,7 +11,9 @@ import (
 	"github.com/bjarneo/cliamp/playlist"
 )
 
-const metadataPaneMaxRows = 8
+// metadataPaneMaxRows counts the blank row above the Metadata header, the
+// header and the fields.
+const metadataPaneMaxRows = 9
 
 type metadataField struct {
 	label string
@@ -111,7 +113,8 @@ func (m Model) renderMetadataPane(rows int) []string {
 		return nil
 	}
 	w := m.layout.settingsWidth
-	lines := []string{fillSeparator(sepHeader("Metadata [Ctrl+I]", m.layout.panelWidth), w)}
+	// A blank row sets Metadata apart from the settings above.
+	lines := []string{"", fillSeparator(sepHeader("Metadata [Ctrl+I]", m.layout.panelWidth), w)}
 	fields := m.metadataFields()
 	if len(fields) == 0 {
 		return append(lines, dimStyle.Render(truncate("No metadata available", w)))

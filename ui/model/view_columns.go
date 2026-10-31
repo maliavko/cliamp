@@ -68,7 +68,7 @@ func (m Model) renderColumnHeaders() string {
 // two band rows, shuffle, repeat, speed, network.
 const (
 	settingsPaneMaxRows = 9
-	metadataPaneMinRows = 3
+	metadataPaneMinRows = 4 // blank row, header and two fields
 )
 
 // paneRow is one settings-pane line together with how readily it is given up
