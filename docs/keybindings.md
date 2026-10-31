@@ -10,6 +10,15 @@ list first. The keymap cannot run key pairs such as `Left` `Right`, the `N`
 then `j` seek, or a player command while another screen is open. For these
 entries, a status message tells you which key to press.
 
+The keys also work in a non-Latin layout, such as Russian: a key acts as the
+US key at the same place, so `о` moves down as `j` does, and the key that
+types `.` in Russian opens `/` search. Text inputs still type what the layout
+gives. Terminals with the kitty keyboard protocol, such as kitty, Ghostty,
+WezTerm, foot, and Alacritty, name the US key for every layout. In other
+terminals this works for Cyrillic letters only, so switch to the US layout
+for `/`, `?`, and the shifted digits. Latin layouts, such as Dvorak or
+AZERTY, keep their own letters.
+
 ## Playback
 
 | Key | Action |
