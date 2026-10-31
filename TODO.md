@@ -27,10 +27,3 @@ of scope. Remaining work, in suggested order:
 
 - [ ] Album cover visualizer: a visualizer mode built from the cover art of
   the playing track. Think through how it looks and reacts to the audio.
-
-## Downloads
-
-- [ ] Ctrl+S on a Plex track: save the original file to `[downloads].directory`.
-  Today Ctrl+S saves only yt-dlp tracks and temp downloads; a Plex track is a
-  stream and fails with "only downloaded tracks can be saved". Download the
-  part with the token in a header, name it "Artist - Title.ext".
