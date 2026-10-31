@@ -246,7 +246,7 @@ func (m Model) coverGeometry() (cols, rows int, protocol string, visible bool) {
 		return 0, 0, "", false
 	}
 	cellWidth, cellHeight := m.cellSize()
-	cols = squareCoverCols(rows, cellWidth, cellHeight)
+	cols = columnCoverCols(rows, m.layout.settingsWidth, cellWidth, cellHeight)
 	if m.layout.panelWidth-cols-1 < playlistMinWidth {
 		return 0, 0, "", false
 	}
@@ -280,6 +280,26 @@ func coverCols(rows int, aspect, cellWidth, cellHeight float64) int {
 		cellWidth, cellHeight = 1, 2
 	}
 	return max(1, int(math.Round(float64(rows)*aspect*cellHeight/cellWidth)))
+}
+
+// squareCoverRows is the height in rows of a square cover cols wide. Cells
+// rarely divide a square evenly, so the cover fills its box and loses at most
+// half a row from its top and bottom; it lines up with a column of that width.
+func squareCoverRows(cols int, cellWidth, cellHeight float64) int {
+	if cellWidth <= 0 || cellHeight <= 0 {
+		cellWidth, cellHeight = 1, 2
+	}
+	return max(1, int(math.Round(float64(cols)*cellWidth/cellHeight)))
+}
+
+// columnCoverCols is the width of a rows-tall square cover in a column width
+// cells wide: the whole column once the rows hold a square that wide, so the
+// cover lines up with the column, and narrower below that.
+func columnCoverCols(rows, width int, cellWidth, cellHeight float64) int {
+	if rows >= squareCoverRows(width, cellWidth, cellHeight) {
+		return width
+	}
+	return min(width, squareCoverCols(rows, cellWidth, cellHeight))
 }
 
 // Info overlay layout: a blank row under the header, then the cover after a
@@ -381,13 +401,24 @@ func loadCoverCmd(slot coverSlot, key, source string, fetch func(context.Context
 func renderCoverCmd(slot coverSlot, key, source string, cols, rows int, protocol string, reuseID int, gen uint64) tea.Cmd {
 	return func() tea.Msg {
 		msg := coverRenderedMsg{slot: slot, key: key, gen: gen, cols: cols, rows: rows, protocol: protocol}
+		// The playing-track and browser covers fill a box as wide as their
+		// column; the info cover keeps its box to the image aspect.
+		fill := slot != coverSlotInfo
 		if protocol == "kitty" {
-			placement, err := kittyimg.Show(source, cols, rows, reuseID)
+			show := kittyimg.Show
+			if fill {
+				show = kittyimg.ShowFill
+			}
+			placement, err := show(source, cols, rows, reuseID)
 			msg.err = err
 			msg.imageID = placement.ID
 			return msg
 		}
-		msg.block, msg.err = kittyimg.Blocks(source, cols, rows)
+		blocks := kittyimg.Blocks
+		if fill {
+			blocks = kittyimg.BlocksFill
+		}
+		msg.block, msg.err = blocks(source, cols, rows)
 		return msg
 	}
 }
@@ -513,13 +544,13 @@ func (m Model) listColumnGeometry() (listColumn, bool) {
 		return listColumn{}, false
 	}
 	cellWidth, cellHeight := m.cellSize()
-	rows := min(m.layout.mainCoverRows, m.effectivePlaylistVisible()-listCoverTop)
-	for rows >= coverMinRows && squareCoverCols(rows, cellWidth, cellHeight) > c.width {
-		rows--
-	}
+	// As wide as the column when the rows allow it, so the cover ends flush
+	// with the column; narrower when they do not.
+	rows := min(m.layout.mainCoverRows, m.effectivePlaylistVisible()-listCoverTop,
+		squareCoverRows(c.width, cellWidth, cellHeight))
 	if rows >= coverMinRows {
 		c.coverRows = rows
-		c.coverCols = squareCoverCols(rows, cellWidth, cellHeight)
+		c.coverCols = columnCoverCols(rows, c.width, cellWidth, cellHeight)
 	}
 	return c, true
 }
