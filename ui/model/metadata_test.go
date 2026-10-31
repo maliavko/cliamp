@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -417,14 +418,14 @@ func TestMetadataMoreDetailsFromSettingsFocus(t *testing.T) {
 			if !m.info.visible || !m.showMetadata || m.info.scroll != 0 || m.plCursor != 1 {
 				t.Fatalf("i from %s: info=%v metadata=%v scroll=%d cursor=%d", focus.label(), m.info.visible, m.showMetadata, m.info.scroll, m.plCursor)
 			}
-			if info := ansi.Strip(m.renderInfoBody()); !strings.Contains(info, "Title: Selected") {
+			if info := ansi.Strip(m.renderInfoBody()); !regexp.MustCompile(`Title: +Selected`).MatchString(info) {
 				t.Fatalf("full info does not describe the highlighted track:\n%s", info)
 			}
 			for range len(m.infoLines()) {
 				updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 				m = updated.(Model)
 			}
-			if info := ansi.Strip(m.renderInfoBody()); m.info.scroll == 0 || !strings.Contains(info, "Path: /selected.mp3") {
+			if info := ansi.Strip(m.renderInfoBody()); m.info.scroll == 0 || !regexp.MustCompile(`Path: +/selected.mp3`).MatchString(info) {
 				t.Fatalf("full info did not scroll to Path: scroll=%d\n%s", m.info.scroll, info)
 			}
 			updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
