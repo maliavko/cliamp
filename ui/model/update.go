@@ -3,6 +3,7 @@ package model
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/bjarneo/cliamp/applog"
 	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/ui"
 )
@@ -63,6 +64,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		cmd := m.handlePaste(msg.Content)
 		return m, cmd
+
+	case tea.KeyboardEnhancementsMsg:
+		applog.Info("keyboard: kitty protocol flags %d, key places %v", msg.Flags, msg.SupportsAlternateKeys())
+		return m, nil
 
 	case tea.KeyPressMsg:
 		cmd := m.handleKey(msg)

@@ -349,6 +349,8 @@ type Model struct {
 	height          int
 	layout          frameLayout
 	textInput       textEditor
+	typedText       string // text of the key being handled, before latinKey
+	nonLatinLayout  bool   // the last letter key typed a non-Latin letter
 	playlistUndo    playlistUndo
 
 	// Provider state

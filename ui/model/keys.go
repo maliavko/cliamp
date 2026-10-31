@@ -188,6 +188,13 @@ func normalizeShiftedLetter(msg tea.KeyPressMsg) tea.KeyPressMsg {
 // the focused area owns the key. The provider filter takes keys only while
 // the provider pane has the focus, where commandContext shows it.
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
+	m.noteLayout(msg)
+	if latin, ok := latinKey(msg, m.nonLatinLayout); ok {
+		// Text inputs still type what the layout gives.
+		m.typedText = msg.Text
+		defer func() { m.typedText = "" }()
+		msg = latin
+	}
 	msg = normalizeShiftedLetter(msg)
 
 	if m.luaSelect != nil {
