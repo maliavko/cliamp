@@ -854,9 +854,6 @@ func (m *Model) handleFullVisualizerKey(msg tea.KeyPressMsg) tea.Cmd {
 		// Hide the episode name so the full-screen visualizer can be put on a
 		// shared screen without naming what is playing.
 		m.hideTrackInfo = !m.hideTrackInfo
-	case "ctrl+i":
-		// Here the shortcut only shows or hides the cover.
-		m.toggleMetadataInPlace()
 	case "?":
 		m.exitFullVisualizer()
 		m.openKeymap()

@@ -237,38 +237,11 @@ func (c coverState) renderedAt(cols, rows int, protocol string) bool {
 }
 
 func (m Model) coverGeometry() (cols, rows int, protocol string, visible bool) {
-	if m.fullVis {
-		return m.fullVisCoverGeometry()
-	}
-	if !m.showMetadata || !m.layout.twoColumn || !m.coverEnabled() || m.quitting || m.headless || m.usesSimplifiedLayout() ||
+	if m.fullVis || !m.showMetadata || !m.layout.twoColumn || !m.coverEnabled() || m.quitting || m.headless || m.usesSimplifiedLayout() ||
 		m.usesContentFirstLayout() || m.visualizerDisabled() || m.layout.tier != layoutFull {
 		return 0, 0, "", false
 	}
 	rows = m.layout.coverRows
-	if rows < coverMinRows {
-		return 0, 0, "", false
-	}
-	cellWidth, cellHeight := m.cellSize()
-	cols = squareCoverCols(rows, cellWidth, cellHeight)
-	if m.layout.panelWidth-cols-1 < playlistMinWidth {
-		return 0, 0, "", false
-	}
-	return cols, rows, coverProtocol(), true
-}
-
-// fullVisCoverTop is the first frame line of the full-screen cover: the top
-// of the visualizer, one blank line below the time status, as in the main
-// view. Its right edge lines up with the right-aligned playback status.
-const fullVisCoverTop = 3
-
-// fullVisCoverGeometry sizes the cover in the full-screen visualizer the same
-// as the main view's pane. It shares the Ctrl+I preference (show_metadata)
-// with the main view.
-func (m Model) fullVisCoverGeometry() (cols, rows int, protocol string, visible bool) {
-	if !m.showMetadata || !m.coverEnabled() || m.quitting || m.headless || m.visualizerDisabled() {
-		return 0, 0, "", false
-	}
-	rows = min(m.layout.mainCoverRows, m.layout.fullVisualizerRows)
 	if rows < coverMinRows {
 		return 0, 0, "", false
 	}
