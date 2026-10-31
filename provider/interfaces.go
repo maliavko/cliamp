@@ -531,3 +531,12 @@ type ChatFilter interface {
 	Chats() []string
 	SetChats(chats []string) error
 }
+
+// ArtworkFetcher is implemented by providers whose artwork requires an
+// authenticated request. FetchArtwork runs from a command goroutine, never
+// the Update loop. The returned bytes are cached by the caller and only the
+// resulting local file URL is exposed to UI and media-control consumers.
+type ArtworkFetcher interface {
+	CanFetchArtwork(track playlist.Track) bool
+	FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error)
+}
