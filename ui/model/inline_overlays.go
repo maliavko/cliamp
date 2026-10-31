@@ -399,12 +399,17 @@ func (m Model) infoLines() []string {
 }
 
 func (m Model) infoLinesAt(width int) []string {
-	var lines []string
-	for _, field := range m.metadataFields() {
-		lines = append(lines, infoFieldLines(field.label, field.value, width)...)
-	}
+	fields := m.metadataFields()
 	if path := metadataText(m.selectedMetadataTrack().Path); path != "" {
-		lines = append(lines, infoFieldLines("Path", path, width)...)
+		fields = append(fields, metadataField{label: "Path", value: path})
+	}
+	labelWidth := 0
+	for _, field := range fields {
+		labelWidth = max(labelWidth, lipgloss.Width(field.label))
+	}
+	var lines []string
+	for _, field := range fields {
+		lines = append(lines, infoFieldLines(field.label, field.value, labelWidth, width)...)
 	}
 	if len(lines) == 0 {
 		lines = append(lines, dimStyle.Render("  No track metadata available."))
@@ -426,11 +431,13 @@ func (m Model) infoWidth() int {
 // on one line and the frame clips it as before.
 const infoMinValueWidth = 12
 
-// infoFieldLines renders one "Label: value" field. A value wider than the body
-// wraps under itself, so long paths and URLs stay readable instead of being
-// clipped at the frame edge. Paths break after a slash where possible.
-func infoFieldLines(label, value string, width int) []string {
-	prefix := "  " + label + ": "
+// infoFieldLines renders one "Label: value" field. The label is padded to
+// labelWidth, so the values of all fields start in one column. A value wider
+// than the body wraps under itself, so long paths and URLs stay readable
+// instead of being clipped at the frame edge. Paths break after a slash where
+// possible.
+func infoFieldLines(label, value string, labelWidth, width int) []string {
+	prefix := "  " + label + ": " + strings.Repeat(" ", max(0, labelWidth-lipgloss.Width(label)))
 	prefixWidth := lipgloss.Width(prefix)
 	valueWidth := width - prefixWidth
 	if valueWidth < infoMinValueWidth || lipgloss.Width(value) <= valueWidth {

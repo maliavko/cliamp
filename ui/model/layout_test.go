@@ -638,7 +638,7 @@ func TestInfoFieldLinesWrapLongValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lines := infoFieldLines("Path", path, tt.width)
+			lines := infoFieldLines("Path", path, 4, tt.width)
 			if len(lines) < tt.wantLines || (tt.wantLines == 1 && len(lines) != 1) {
 				t.Fatalf("lines = %d, want %d:\n%s", len(lines), tt.wantLines, strings.Join(lines, "\n"))
 			}
@@ -842,5 +842,17 @@ func TestViewLeavesLayoutState(t *testing.T) {
 	}
 	if m.layout != layout {
 		t.Fatalf("layout after View = %+v, want %+v", m.layout, layout)
+	}
+}
+
+// The values of all info fields start in one column, whatever the label.
+func TestInfoFieldsAlignValues(t *testing.T) {
+	var cols []int
+	for _, label := range []string{"Title", "Artist", "Length"} {
+		line := ansi.Strip(infoFieldLines(label, "value", 6, 80)[0])
+		cols = append(cols, strings.Index(line, "value"))
+	}
+	if cols[0] != cols[1] || cols[1] != cols[2] {
+		t.Fatalf("value columns = %v, want one column", cols)
 	}
 }
