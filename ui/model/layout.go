@@ -282,6 +282,11 @@ func (m *Model) layoutFor(sizeVisualizer bool) {
 		main.fullVis = false
 		if main.focus == focusProvider {
 			main.focus = focusPlaylist
+			// The browser shows the cover of its own entry, so it gets the
+			// large size even while no track cover is loaded.
+			if main.cover.local == "" {
+				main.cover.local = "browser"
+			}
 		}
 		main.layoutFor(false)
 		layout.mainCoverRows = main.layout.coverRows
