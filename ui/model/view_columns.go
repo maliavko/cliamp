@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -330,7 +331,7 @@ func columnLines(block string, w, rows int) []string {
 		lines = append(lines, "")
 	}
 	for i, line := range lines {
-		line = ansi.Truncate(line, w, "")
+		line = ansi.Truncate(textPresentation(line), w, "")
 		if pad := w - lipgloss.Width(line); pad > 0 {
 			line += strings.Repeat(" ", pad)
 		}
@@ -338,3 +339,27 @@ func columnLines(block string, w, rows int) []string {
 	}
 	return lines
 }
+
+// textPresentation drops the emoji variation selector (U+FE0F) unless the
+// terminal draws such an emoji two cells wide. Width counting takes "❤️" as
+// two cells; kitty, Ghostty and WezTerm agree, but Alacritty and many others
+// draw it one wide, so a padded column line ends a cell early and shifts the
+// column beside it. Without the selector the character takes its default
+// presentation, whose width they agree on, as favHeart does with the text
+// selector.
+func textPresentation(s string) string {
+	if emojiSelectorWide {
+		return s
+	}
+	return strings.ReplaceAll(s, "\uFE0F", "")
+}
+
+// emojiSelectorWide reports whether the terminal draws an emoji with U+FE0F
+// two cells wide. Tests override it.
+var emojiSelectorWide = func() bool {
+	term := strings.ToLower(os.Getenv("TERM"))
+	program := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	return strings.Contains(term, "kitty") || strings.Contains(term, "ghostty") ||
+		strings.Contains(program, "kitty") || strings.Contains(program, "ghostty") ||
+		strings.Contains(program, "wezterm")
+}()
