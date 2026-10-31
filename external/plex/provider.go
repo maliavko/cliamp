@@ -34,6 +34,12 @@ const (
 	// last one starts, the next batch is appended; Ctrl+R on the open
 	// station starts it again for a fresh selection.
 	stationBatch = 30
+	// mixPool is how many sonically similar tracks one request asks for. A
+	// song mix hands them out a batch at a time and asks again, around its
+	// latest track, once they run out.
+	mixPool = 300
+	// mixArtistCap is how many tracks of one artist a song mix batch takes.
+	mixArtistCap = 2
 	// favoriteBatch is how many tracks one request asks the rating of.
 	favoriteBatch = 100
 	albumCacheTTL = 5 * time.Minute
@@ -52,6 +58,7 @@ var (
 	_ provider.TrackFavoriter      = (*Provider)(nil)
 	_ provider.TrackFavoriteState  = (*Provider)(nil)
 	_ provider.TrackFavoriteLoader = (*Provider)(nil)
+	_ provider.Relater             = (*Provider)(nil)
 	_ provider.ProgressReporter    = (*Provider)(nil)
 	_ provider.ArtworkFetcher      = (*Provider)(nil)
 	_ provider.ListArtworkFetcher  = (*Provider)(nil)
@@ -78,7 +85,18 @@ type Provider struct {
 	// stationQueues maps the path of the last track of each station batch
 	// to the server play queue that continues after it.
 	stationQueues map[string]stationQueue
-	now           func() time.Time
+	// mixes maps the path of the last track of each song mix batch to the
+	// mix that continues after it.
+	mixes map[string]*songMix
+	now   func() time.Time
+}
+
+// songMix is an endless song mix: sonically similar tracks of a seed, handed
+// out a batch at a time.
+type songMix struct {
+	batch int
+	pool  []Track         // similar tracks not handed out yet, closest first
+	used  map[string]bool // ratingKeys of the seed and every handed out track
 }
 
 // stationQueue is where a station's server play queue continues.
@@ -564,12 +582,14 @@ func (p *Provider) stationBatchTracks(page PlayQueuePage) []playlist.Track {
 	return tracks
 }
 
-// CanContinueAfter reports whether track ends a station batch. It does no I/O.
+// CanContinueAfter reports whether track ends a station or song mix batch.
+// It does no I/O.
 func (p *Provider) CanContinueAfter(track playlist.Track) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.stationQueues[track.Path]
-	return ok
+	_, station := p.stationQueues[track.Path]
+	_, mix := p.mixes[track.Path]
+	return station || mix
 }
 
 // ContinueAfter returns the next station batch after track, the last track
@@ -578,7 +598,17 @@ func (p *Provider) ContinueAfter(track playlist.Track) ([]playlist.Track, error)
 	p.mu.Lock()
 	queue, ok := p.stationQueues[track.Path]
 	delete(p.stationQueues, track.Path)
+	mix := p.mixes[track.Path]
+	delete(p.mixes, track.Path)
 	p.mu.Unlock()
+	if mix != nil {
+		tracks, err := p.mixBatch(mix, plexTrackID(track))
+		if err != nil {
+			// Keep the mix so a later start of the same track can retry.
+			p.rememberMix(track.Path, mix)
+		}
+		return tracks, err
+	}
 	if !ok {
 		return nil, nil
 	}
@@ -594,6 +624,79 @@ func (p *Provider) ContinueAfter(track playlist.Track) ([]playlist.Track, error)
 		return nil, err
 	}
 	return p.stationBatchTracks(page), nil
+}
+
+// CanRelate reports whether track is a Plex track. It does no I/O.
+// Implements provider.Relater.
+func (p *Provider) CanRelate(track playlist.Track) bool {
+	return plexTrackID(track) != ""
+}
+
+// RelatedTracks starts an endless song mix from seed: up to n tracks that
+// sound like it, at most mixArtistCap of one artist. When the last of them
+// starts, ContinueAfter hands out the next n. It needs the server's sonic
+// analysis. Implements provider.Relater.
+func (p *Provider) RelatedTracks(ctx context.Context, seed playlist.Track, n int) ([]playlist.Track, error) {
+	id := plexTrackID(seed)
+	if id == "" || n < 1 {
+		return nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	mix := &songMix{batch: n, used: map[string]bool{id: true}}
+	return p.mixBatch(mix, id)
+}
+
+// mixBatch hands out the next batch of mix and remembers that its last track
+// continues the mix. When the pool runs short, it asks the server for tracks
+// like from, the seed or the latest track of the mix.
+func (p *Provider) mixBatch(mix *songMix, from string) ([]playlist.Track, error) {
+	perArtist := make(map[string]int)
+	batch := mix.take(mix.batch, perArtist)
+	if len(batch) < mix.batch && from != "" {
+		more, err := p.client.Nearest(from, mixPool)
+		if err != nil {
+			return nil, err
+		}
+		mix.pool = append(mix.pool, more...)
+		batch = append(batch, mix.take(mix.batch-len(batch), perArtist)...)
+	}
+	tracks := p.convertTracks(batch, 0)
+	if len(tracks) > 0 {
+		p.rememberMix(tracks[len(tracks)-1].Path, mix)
+	}
+	return tracks, nil
+}
+
+func (p *Provider) rememberMix(path string, mix *songMix) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mixes == nil {
+		p.mixes = make(map[string]*songMix)
+	}
+	p.mixes[path] = mix
+}
+
+// take removes up to n unused tracks from the pool, closest first, while
+// perArtist, the count of the batch so far, stays within mixArtistCap.
+// Tracks skipped for the cap stay in the pool for a later batch.
+func (mix *songMix) take(n int, perArtist map[string]int) []Track {
+	var batch, rest []Track
+	for _, t := range mix.pool {
+		switch {
+		case mix.used[t.RatingKey]:
+			// Dropped: the mix already has it.
+		case len(batch) < n && perArtist[t.ArtistName] < mixArtistCap:
+			batch = append(batch, t)
+			perArtist[t.ArtistName]++
+			mix.used[t.RatingKey] = true
+		default:
+			rest = append(rest, t)
+		}
+	}
+	mix.pool = rest
+	return batch
 }
 
 // stationLists returns the radio stations of the music sections as browser
