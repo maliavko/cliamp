@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -392,6 +393,10 @@ type Model struct {
 	speedSaveAfter time.Duration
 	eqSaveAfter    time.Duration
 	termTitle      terminalTitleState
+
+	// Song mix: how many related songs it adds, and the lookup in flight.
+	songMixSize   int
+	songMixCancel context.CancelFunc
 
 	jump     jumpState
 	urlInput urlInputState
