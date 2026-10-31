@@ -385,6 +385,8 @@ This applies to:
 
 - `/` playlist search
 - `/` file browser filter
+- `/` provider browser filter, such as `metallica reload` for the album
+  "Metallica — Reload"
 - `Ctrl+F` when the active provider is Local (your saved playlists)
 
 Other `Ctrl+F` providers, including Spotify, Qobuz, Tidal, Bandcamp,
