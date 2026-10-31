@@ -1,8 +1,10 @@
 package plex
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -976,6 +978,32 @@ func TestProviderStationLists(t *testing.T) {
 				t.Fatalf("section order = %v, want %v", sections, want)
 			}
 		})
+	}
+}
+
+func TestProviderStationArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("station artwork requested %s", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	list := playlist.PlaylistInfo{ID: prefixStation + "/library/sections/3/stations/1", Section: sectionRadio}
+	if !p.CanFetchListArtwork(list) {
+		t.Fatal("CanFetchListArtwork = false for a station")
+	}
+	art, err := p.FetchListArtwork(t.Context(), list)
+	if err != nil {
+		t.Fatalf("FetchListArtwork: %v", err)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(art))
+	if err != nil || cfg.Width != cfg.Height {
+		t.Fatalf("station artwork = %dx%d, %v; want a square PNG", cfg.Width, cfg.Height, err)
+	}
+	art[0] = 0
+	if again, _ := p.FetchListArtwork(t.Context(), list); again[0] == 0 {
+		t.Fatal("FetchListArtwork returned the shared artwork buffer")
 	}
 }
 

@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"slices"
@@ -469,17 +470,31 @@ func (p *Provider) RestoreTrack(track playlist.Track) (playlist.Track, bool) {
 	return track, true
 }
 
+// stationArt is the cover of every radio station. Plex sends stations with
+// only a client-drawn icon, so the browser would show no cover for them.
+//
+//go:embed station.png
+var stationArt []byte
+
 // CanFetchListArtwork reports whether the last Playlists call returned
-// artwork for list. It does no I/O.
+// artwork for list. Radio stations always have the built-in cover. It does
+// no I/O.
 func (p *Provider) CanFetchListArtwork(list playlist.PlaylistInfo) bool {
+	if strings.HasPrefix(list.ID, prefixStation) {
+		return true
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.listArtKeys[list.ID] != ""
 }
 
 // FetchListArtwork downloads the cover of an album or the composite of a
-// playlist with the token in a request header.
+// playlist with the token in a request header, or returns the built-in
+// cover of a radio station.
 func (p *Provider) FetchListArtwork(ctx context.Context, list playlist.PlaylistInfo) ([]byte, error) {
+	if strings.HasPrefix(list.ID, prefixStation) {
+		return slices.Clone(stationArt), nil
+	}
 	p.mu.Lock()
 	path := p.listArtKeys[list.ID]
 	p.mu.Unlock()
