@@ -395,7 +395,6 @@ var commandRegistry = []commandSpec{
 	{Mode: commandModeFullVis, Keys: []string{"+", "=", "-"}, KeyLabel: "+ -", Label: "Volume up/down", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"v"}, KeyLabel: "v", Label: "Cycle visualizer", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"t"}, KeyLabel: "t", Label: "Hide track info", Keymap: true, ContextHelp: true},
-	{Mode: commandModeFullVis, Keys: []string{"ctrl+i"}, KeyLabel: "Ctrl+I", Label: "Show / hide cover", Keymap: true, ContextHelp: true},
 	{Mode: commandModeProvider, Keys: []string{"ctrl+i"}, KeyLabel: "Ctrl+I", Label: "Show / hide metadata", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"?"}, KeyLabel: "?", Label: "Help", Keymap: true},
 }

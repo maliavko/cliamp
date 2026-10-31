@@ -27,7 +27,7 @@ type frameLayout struct {
 	visualizerRows int
 	coverRows      int
 	// mainCoverRows is coverRows as the main view lays it out, so the
-	// full-screen visualizer can draw the same cover size.
+	// provider browser can draw the same cover size.
 	mainCoverRows      int
 	baseVisualizerRows int
 	fullVisualizerRows int
@@ -274,19 +274,16 @@ func (m *Model) layoutFor(sizeVisualizer bool) {
 	}
 
 	layout.mainCoverRows = layout.coverRows
-	if m.fullVis || m.focus == focusProvider {
-		// The full-screen visualizer and the provider browser have no
-		// columns, so their own coverRows misses the main view's large cover.
-		// Lay out the main view on a copy.
+	if m.focus == focusProvider {
+		// The provider browser has no columns, so its own coverRows misses
+		// the main view's large cover. Lay out the main view on a copy.
 		main := *m
 		main.fullVis = false
-		if main.focus == focusProvider {
-			main.focus = focusPlaylist
-			// The browser shows the cover of its own entry, so it gets the
-			// large size even while no track cover is loaded.
-			if main.cover.local == "" {
-				main.cover.local = "browser"
-			}
+		main.focus = focusPlaylist
+		// The browser shows the cover of its own entry, so it gets the
+		// large size even while no track cover is loaded.
+		if main.cover.local == "" {
+			main.cover.local = "browser"
 		}
 		main.layoutFor(false)
 		layout.mainCoverRows = main.layout.coverRows
