@@ -112,6 +112,32 @@ func TestSongMixReplacesQueueWithSeedAndRelated(t *testing.T) {
 	}
 }
 
+// A mix of the song that plays keeps it playing where it is: the queue
+// becomes the seed and its related songs, and nothing stops or restarts.
+func TestSongMixKeepsPlayingSeed(t *testing.T) {
+	m, player, _ := songMixModel()
+	m.playlist.SetIndex(1)
+	seed, _ := m.playlist.Track(1)
+	m.playingTrack, m.playingTrackActive = seed, true
+
+	next, cmd := m.Update(songMixKey)
+	m = next.(Model)
+	next, play := m.Update(cmd())
+	m = next.(Model)
+	runCmds(play)
+
+	if got := paths(m.playlist.Tracks()); strings.Join(got, " ") != "fake:seed fake:r1 fake:r2" {
+		t.Fatalf("queue = %v, want the seed then fake:r1 fake:r2", got)
+	}
+	if player.stopCalls != 0 || len(player.playCalls) != 0 {
+		t.Fatalf("Stop %d, playCalls %v; want the seed left playing", player.stopCalls, player.playCalls)
+	}
+	if m.playlist.Index() != 0 || m.plCursor != 0 || !m.playingTrackActive || m.playingTrack.Path != "fake:seed" {
+		t.Fatalf("index %d, cursor %d, playing %q (%v); want the seed current at the top",
+			m.playlist.Index(), m.plCursor, m.playingTrack.Path, m.playingTrackActive)
+	}
+}
+
 // A failed lookup, or one that finds nothing, leaves the queue and playback
 // alone and says so.
 func TestSongMixFailureKeepsQueue(t *testing.T) {

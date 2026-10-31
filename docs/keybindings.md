@@ -160,7 +160,7 @@ preference remains saved for a wider layout. See
 |---|---|
 | `a` | Toggle the queue (play next) |
 | `A` | Queue manager |
-| `c` | Song mix: replace the queue with the highlighted song and related songs, and play it from the top. Spotify and YouTube songs only; see [Song mix](#song-mix) |
+| `c` | Song mix: replace the queue with the highlighted song and related songs, and play it from the top; a song already playing keeps playing. Spotify and YouTube songs only; see [Song mix](#song-mix) |
 | `c` | In the queue manager: clear the queue (press again to confirm when more than one track) |
 | `d` | In the queue manager: remove the highlighted track |
 | `F` | Subscribed shows overlay (any provider that keeps subscriptions) |
@@ -181,8 +181,8 @@ Press `c` on a Spotify or YouTube song, in the playlist or in `Ctrl+F` search
 results, to start a song mix. cliamp looks up related songs (Spotify's
 autoplay station, or the YouTube Mix through yt-dlp) while the status line
 shows "Finding songs like …". When they arrive, the queue becomes the chosen
-song followed by the related songs, and the chosen song plays from the start,
-even if it was already playing.
+song followed by the related songs. The chosen song plays from the start; if
+it is the song already playing, it keeps playing where it is.
 
 - If the lookup fails or finds nothing, the queue and playback stay as they were.
 - Pressing `c` again, or loading, opening or refreshing a playlist, before the

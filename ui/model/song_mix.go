@@ -98,10 +98,11 @@ func (m *Model) startSongMix(seed playlist.Track) tea.Cmd {
 }
 
 // handleSongMix replaces the queue with the seed and its related songs and
-// plays the seed from the top. Ctrl+Z brings the old queue back, unlinked from
-// the playlist it came from. The new queue comes from no playlist, so it keeps
-// no link to the old one either. On failure the queue and playback are left
-// alone.
+// plays the seed from the top. A seed that is playing already keeps playing
+// where it is, and the related songs follow it. Ctrl+Z brings the old queue
+// back, unlinked from the playlist it came from. The new queue comes from no
+// playlist, so it keeps no link to the old one either. On failure the queue
+// and playback are left alone.
 func (m *Model) handleSongMix(msg songMixMsg) tea.Cmd {
 	if msg.id != m.requests.queue {
 		return nil
@@ -116,7 +117,10 @@ func (m *Model) handleSongMix(msg songMixMsg) tea.Cmd {
 	}
 	tracks := append([]playlist.Track{msg.seed}, msg.tracks...)
 	snapshot := m.playlist.Snapshot()
-	m.stopPlayback()
+	keepPlaying := m.playingTrackActive && m.playingTrack.Path == msg.seed.Path
+	if !keepPlaying {
+		m.stopPlayback()
+	}
 	m.player.ClearPreload()
 	m.retireTracksPaging()
 	m.replacePlaylist(tracks)
@@ -125,7 +129,19 @@ func (m *Model) handleSongMix(msg songMixMsg) tea.Cmd {
 	m.setHeaderStateFromTracks(tracks)
 	m.focus = focusPlaylist
 	m.status.Successf(statusTTLDefault, "Song mix: %s and %d related songs (Ctrl+Z to undo)", msg.seed.DisplayName(), len(msg.tracks))
-	cmd := m.playCurrentTrack()
+	var cmd tea.Cmd
+	if keepPlaying {
+		// The seed heads the new queue; the engine keeps it. The queue's copy
+		// carries the new playback context, which the resume state saves.
+		m.playlist.SetIndex(0)
+		m.plCursor = 0
+		if seed, ok := m.playlist.Track(0); ok {
+			m.playingTrack = seed
+		}
+		cmd = m.rearmStalePreload()
+	} else {
+		cmd = m.playCurrentTrack()
+	}
 	m.recordPlaylistUndo(playlistUndo{snapshot: snapshot})
 	return cmd
 }
