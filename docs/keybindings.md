@@ -163,7 +163,7 @@ preference remains saved for a wider layout. See
 |---|---|
 | `a` | Toggle the queue (play next) |
 | `A` | Queue manager |
-| `c` | Song mix: replace the queue with the highlighted song and related songs, and play it from the top; a song already playing keeps playing. Spotify and YouTube songs only; see [Song mix](#song-mix) |
+| `c` | Song mix: replace the queue with the highlighted song and related songs, and play it from the top; a song already playing keeps playing. Spotify, YouTube and Plex songs only; see [Song mix](#song-mix) |
 | `c` | In the queue manager: clear the queue (press again to confirm when more than one track) |
 | `d` | In the queue manager: remove the highlighted track |
 | `F` | Subscribed shows overlay (any provider that keeps subscriptions) |
@@ -180,9 +180,11 @@ track.
 
 ### Song mix
 
-Press `c` on a Spotify or YouTube song, in the playlist or in `Ctrl+F` search
-results, to start a song mix. cliamp looks up related songs (Spotify's
-autoplay station, or the YouTube Mix through yt-dlp) while the status line
+Press `c` on a Spotify, YouTube or Plex song, in the playlist or in `Ctrl+F`
+search results, to start a song mix. cliamp looks up related songs (Spotify's
+autoplay station, the YouTube Mix through yt-dlp, or the tracks that sound
+alike on a Plex server, which plays on without end; see
+[Plex](plex.md#usage)) while the status line
 shows "Finding songs like …". When they arrive, the queue becomes the chosen
 song followed by the related songs. The chosen song plays from the start; if
 it is the song already playing, it keeps playing where it is.
@@ -388,7 +390,7 @@ search and the results list is open:
 | `Enter` | Play the selected track now |
 | `a` | Append the selected track to the playlist |
 | `q` | Queue the selected track to play next |
-| `c` | Song mix from the selected song (Spotify and YouTube songs, not albums) |
+| `c` | Song mix from the selected song (Spotify, YouTube and Plex songs, not albums) |
 | `f` | Toggle the favorite ♥ on the selected track. On a podcast show, subscribe or unsubscribe. |
 | `p` | (Spotify only) Save the selected track to a Spotify playlist |
 | `Esc` `Backspace` | Back to the search input |
