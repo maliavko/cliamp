@@ -606,6 +606,26 @@ func (c *Client) Track(ratingKey string) (Track, error) {
 	return trackFromJSON(result.MediaContainer.Metadata[0]), nil
 }
 
+// Nearest returns up to limit tracks that sound like the track with
+// ratingKey, closest first, from the server's sonic analysis. A server without
+// that analysis returns none.
+func (c *Client) Nearest(ratingKey string, limit int) ([]Track, error) {
+	var result struct {
+		MediaContainer struct {
+			Metadata []trackJSON `json:"Metadata"`
+		} `json:"MediaContainer"`
+	}
+	params := url.Values{"limit": {strconv.Itoa(limit)}}
+	if err := c.get("/library/metadata/"+ratingKey+"/nearest", params, &result); err != nil {
+		return nil, fmt.Errorf("plex: tracks like %s: %w", ratingKey, err)
+	}
+	tracks := make([]Track, 0, len(result.MediaContainer.Metadata))
+	for _, item := range result.MediaContainer.Metadata {
+		tracks = append(tracks, trackFromJSON(item))
+	}
+	return tracks, nil
+}
+
 // TracksByKey returns the tracks with the given ratingKeys in one request.
 // Keys the server does not know are left out.
 func (c *Client) TracksByKey(ratingKeys []string) ([]Track, error) {

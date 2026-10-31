@@ -1196,3 +1196,73 @@ func TestProviderLoadFavoriteStates(t *testing.T) {
 		t.Fatalf("second load: err %v, requests %d; want none", err, len(sent()))
 	}
 }
+
+// A song mix hands out the closest tracks a batch at a time, at most
+// mixArtistCap of one artist per batch, never one twice, and asks the server
+// again around its latest track once the pool runs short.
+func TestProviderSongMix(t *testing.T) {
+	// nearest maps a seed to its similar tracks, closest first, as id:artist.
+	nearest := map[string][]string{
+		"1":  {"11:A", "12:A", "13:A", "14:A", "15:B", "16:B", "17:B", "18:C", "19:C", "20:C"},
+		"18": {"11:A", "21:D", "22:D", "23:D"},
+	}
+	var (
+		mu    sync.Mutex
+		asked []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/library/metadata/"), "/nearest")
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		asked = append(asked, id)
+		mu.Unlock()
+		var items []string
+		for _, entry := range nearest[id] {
+			key, artist, _ := strings.Cut(entry, ":")
+			items = append(items, fmt.Sprintf(`{"ratingKey":%q,"title":"T%s","grandparentTitle":%q,"Media":[{"Part":[{"key":"/library/parts/%s/file.flac"}]}]}`, key, key, artist, key))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[%s]}}`, strings.Join(items, ","))
+	}))
+	defer srv.Close()
+	p := newProvider(NewClient(srv.URL, "tok"))
+
+	ids := func(tracks []playlist.Track) string {
+		var out []string
+		for _, tr := range tracks {
+			out = append(out, strings.TrimPrefix(tr.Path, TrackURIPrefix))
+		}
+		return strings.Join(out, " ")
+	}
+
+	if got, err := p.RelatedTracks(t.Context(), playlist.Track{Path: "/local/song.mp3"}, 4); err != nil || got != nil {
+		t.Fatalf("RelatedTracks(local) = %v, %v; want nothing", got, err)
+	}
+	first, err := p.RelatedTracks(t.Context(), playlist.Track{Path: TrackURIPrefix + "1"}, 4)
+	if err != nil || ids(first) != "11 12 15 16" {
+		t.Fatalf("first batch = %q, %v; want 11 12 15 16", ids(first), err)
+	}
+	last := first[len(first)-1]
+	if p.CanContinueAfter(first[0]) || !p.CanContinueAfter(last) {
+		t.Fatal("only the last track of a batch continues the mix")
+	}
+	second, err := p.ContinueAfter(last)
+	if err != nil || ids(second) != "13 14 17 18" {
+		t.Fatalf("second batch = %q, %v; want 13 14 17 18", ids(second), err)
+	}
+	if p.CanContinueAfter(last) {
+		t.Fatal("a continued batch end still continues")
+	}
+	third, err := p.ContinueAfter(second[len(second)-1])
+	if err != nil || ids(third) != "19 20 21 22" {
+		t.Fatalf("third batch = %q, %v; want 19 20 21 22", ids(third), err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(asked, " ") != "1 18" {
+		t.Fatalf("nearest asked for %v, want the seed, then the latest track once the pool ran short", asked)
+	}
+}
