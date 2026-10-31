@@ -845,14 +845,16 @@ func TestViewLeavesLayoutState(t *testing.T) {
 	}
 }
 
-// The values of all info fields start in one column, whatever the label.
+// The info labels are right-aligned: the colons and the values of all fields
+// line up, whatever the label.
 func TestInfoFieldsAlignValues(t *testing.T) {
-	var cols []int
+	var colons, values []int
 	for _, label := range []string{"Title", "Artist", "Length"} {
 		line := ansi.Strip(infoFieldLines(label, "value", 6, 80)[0])
-		cols = append(cols, strings.Index(line, "value"))
+		colons = append(colons, strings.Index(line, ":"))
+		values = append(values, strings.Index(line, "value"))
 	}
-	if cols[0] != cols[1] || cols[1] != cols[2] {
-		t.Fatalf("value columns = %v, want one column", cols)
+	if colons[0] != colons[1] || colons[1] != colons[2] || values[0] != values[1] || values[1] != values[2] {
+		t.Fatalf("colon columns %v, value columns %v, want one of each", colons, values)
 	}
 }

@@ -496,3 +496,22 @@ func TestMetadataDoesNotEnableDisabledVisualizer(t *testing.T) {
 	}
 	assertViewFits(t, m.View().Content, 80, 24)
 }
+
+// The sidebar right-aligns the labels, so the values start in one column.
+func TestMetadataPaneAlignsValues(t *testing.T) {
+	m := newLayoutTestModel(100, 30)
+	m.playlist.SetTrack(0, playlist.Track{Path: "a.mp3", Title: "Song", Artist: "Band", Album: "Record", Year: 2001})
+	m.showMetadata = true
+	var cols []int
+	for _, line := range m.renderMetadataPane(8)[1:] {
+		line = ansi.Strip(line)
+		for _, value := range []string{"Song", "Band", "Record", "2001"} {
+			if i := strings.Index(line, " "+value); i >= 0 {
+				cols = append(cols, i)
+			}
+		}
+	}
+	if len(cols) != 4 || cols[0] != cols[1] || cols[1] != cols[2] || cols[2] != cols[3] {
+		t.Fatalf("value columns = %v, want four in one column", cols)
+	}
+}
