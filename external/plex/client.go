@@ -738,8 +738,9 @@ type trackJSON struct {
 	ParentTitle      string  `json:"parentTitle"`      // album
 	ParentRatingKey  string  `json:"parentRatingKey"`  // album
 	Year             int     `json:"year"`
-	Index            int     `json:"index"`    // track number within album
-	Duration         int     `json:"duration"` // milliseconds
+	ParentYear       int     `json:"parentYear"` // album year; tracks rarely carry their own
+	Index            int     `json:"index"`      // track number within album
+	Duration         int     `json:"duration"`   // milliseconds
 	UserRating       float64 `json:"userRating"`
 	Thumb            string  `json:"thumb"`
 	ParentThumb      string  `json:"parentThumb"`
@@ -759,13 +760,17 @@ func trackFromJSON(m trackJSON) Track {
 	if thumb == "" {
 		thumb = m.ParentThumb
 	}
+	year := m.Year
+	if year == 0 {
+		year = m.ParentYear
+	}
 	return Track{
 		RatingKey:   m.RatingKey,
 		Title:       m.Title,
 		ArtistName:  m.GrandparentTitle,
 		AlbumName:   m.ParentTitle,
 		AlbumKey:    m.ParentRatingKey,
-		Year:        m.Year,
+		Year:        year,
 		TrackNumber: m.Index,
 		Duration:    m.Duration,
 		PartKey:     partKey,
