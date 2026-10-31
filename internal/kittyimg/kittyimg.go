@@ -98,6 +98,16 @@ var (
 // pixel size of a cols x rows cell block, and transmits it as a virtual
 // placement. Call Block to get the text that displays it.
 func Show(source string, cols, rows int, reuseID int) (Placement, error) {
+	return show(source, cols, rows, reuseID, false)
+}
+
+// ShowFill is Show for an image that covers the whole block: it is scaled to
+// fill both sides, and the overflow is cut evenly from the two ends.
+func ShowFill(source string, cols, rows int, reuseID int) (Placement, error) {
+	return show(source, cols, rows, reuseID, true)
+}
+
+func show(source string, cols, rows int, reuseID int, fill bool) (Placement, error) {
 	if cols <= 0 || rows <= 0 {
 		return Placement{}, fmt.Errorf("kittyimg: bad size %dx%d", cols, rows)
 	}
@@ -155,6 +165,9 @@ func Show(source string, cols, rows int, reuseID int) (Placement, error) {
 		// terminal's real cell geometry; stretching the PNG to an assumed 8x16
 		// grid would make square covers rectangular and reintroduce letterboxing.
 		scaled := scaleToFit(img, pixelWidth, pixelHeight)
+		if fill {
+			scaled = scaleToFill(img, pixelWidth, pixelHeight)
+		}
 		if err := transmit(id, scaled, cols, rows); err != nil {
 			applog.Warn("kittyimg: transmit: %v", err)
 		}
@@ -194,6 +207,21 @@ func scaleToFit(src image.Image, maxWidth, maxHeight int) *image.NRGBA {
 	}
 	ratio := math.Min(float64(maxWidth)/float64(width), float64(maxHeight)/float64(height))
 	return scale(src, max(1, int(math.Round(float64(width)*ratio))), max(1, int(math.Round(float64(height)*ratio))))
+}
+
+// scaleToFill scales src to cover a width x height box and cuts the overflow
+// evenly from both ends of the longer side.
+func scaleToFill(src image.Image, width, height int) *image.NRGBA {
+	bounds := src.Bounds()
+	srcW, srcH := bounds.Dx(), bounds.Dy()
+	if srcW <= 0 || srcH <= 0 || width <= 0 || height <= 0 {
+		return image.NewNRGBA(image.Rect(0, 0, max(0, width), max(0, height)))
+	}
+	ratio := math.Max(float64(width)/float64(srcW), float64(height)/float64(srcH))
+	w := max(width, int(math.Round(float64(srcW)*ratio)))
+	h := max(height, int(math.Round(float64(srcH)*ratio)))
+	x, y := (w-width)/2, (h-height)/2
+	return scale(src, w, h).SubImage(image.Rect(x, y, x+width, y+height)).(*image.NRGBA)
 }
 
 // Clear deletes a transmitted image. Placeholders that remain on screen stop

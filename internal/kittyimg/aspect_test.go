@@ -38,3 +38,14 @@ func TestAspectRejectsNonImage(t *testing.T) {
 		t.Fatal("Aspect accepted a non-image source")
 	}
 }
+
+// scaleToFill covers the whole box and cuts the overflow from the longer side.
+func TestScaleToFill(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 100, 100))
+	for _, box := range [][2]int{{200, 190}, {190, 200}, {50, 50}} {
+		got := scaleToFill(src, box[0], box[1]).Bounds()
+		if got.Dx() != box[0] || got.Dy() != box[1] {
+			t.Fatalf("box %v: image %dx%d, want it filled", box, got.Dx(), got.Dy())
+		}
+	}
+}

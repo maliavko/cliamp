@@ -88,8 +88,9 @@ func TestCoverFollowsMetadataVisibility(t *testing.T) {
 	if !visible || protocol != "blocks" {
 		t.Fatalf("coverGeometry = (%d,%d,%q,%v)", cols, rows, protocol, visible)
 	}
-	if rows != 2*m.layout.baseVisualizerRows || rows != m.layout.visualizerRows || cols != 2*rows {
-		t.Fatalf("cover = %dx%d, base visualizer rows = %d, visualizer rows = %d", cols, rows, m.layout.baseVisualizerRows, m.layout.visualizerRows)
+	// A square as wide as the settings column, with the visualizer as tall.
+	if cols != m.layout.settingsWidth || rows != squareCoverRows(cols, 0, 0) || rows != m.layout.visualizerRows {
+		t.Fatalf("cover = %dx%d, settings %d cols, visualizer rows = %d", cols, rows, m.layout.settingsWidth, m.layout.visualizerRows)
 	}
 
 	m.SetShowMetadata(false)
@@ -620,8 +621,8 @@ func TestListColumnMatchesSettingsPane(t *testing.T) {
 	if !ok || col.width != settings || col.listWidth != playlistWidth {
 		t.Fatalf("column = %+v (ok %v), settings pane %d, playlist %d", col, ok, settings, playlistWidth)
 	}
-	if col.coverCols > col.width {
-		t.Fatalf("cover %d cols overflows the %d-col column", col.coverCols, col.width)
+	if col.coverCols != col.width {
+		t.Fatalf("cover %d cols, want flush with the %d-col column", col.coverCols, col.width)
 	}
 }
 
@@ -663,6 +664,22 @@ func TestListColumnCtrlIToggles(t *testing.T) {
 		}
 		if saver.saved["show_metadata"] != strconv.FormatBool(want) {
 			t.Fatalf("saved = %v", saver.saved)
+		}
+	}
+}
+
+// A cover fills its column once the rows hold a square that wide, whatever
+// the cell shape, and is narrower below that.
+func TestColumnCoverCols(t *testing.T) {
+	for _, cell := range [][2]float64{{1, 2}, {9, 20}, {8, 17}, {10, 21}} {
+		for width := settingsMinWidth; width <= settingsMaxWidth; width++ {
+			rows := squareCoverRows(width, cell[0], cell[1])
+			if got := columnCoverCols(rows, width, cell[0], cell[1]); got != width {
+				t.Fatalf("cell %v, width %d: %d rows give %d cols, want the column", cell, width, rows, got)
+			}
+			if got := columnCoverCols(rows-2, width, cell[0], cell[1]); got >= width {
+				t.Fatalf("cell %v, width %d: %d rows give %d cols, want narrower", cell, width, rows-2, got)
+			}
 		}
 	}
 }

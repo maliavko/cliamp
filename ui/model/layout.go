@@ -241,18 +241,21 @@ func (m *Model) layoutFor(sizeVisualizer bool) {
 	layout.coverRows = layout.visualizerRows
 	if layout.twoColumn && m.showMetadata && m.cover.local != "" && m.coverEnabled() &&
 		!m.headless && !m.fullVis && !m.visualizerDisabled() {
-		// Once artwork is ready, restore the large presentation: the cover and
-		// visualizer can grow to twice their configured height. Keep enough body
-		// rows for every direct setting and a usable Metadata section.
+		// Once artwork is ready, the cover becomes a square as wide as the
+		// settings column, so it lines up with the column, and the visualizer
+		// beside it takes the same rows. It grows only into rows that every
+		// direct setting and a usable Metadata section leave free.
 		bodyRows := height - 2*paddingV - layout.fixedRows - layout.footerRows
 		controls := 5
 		if len(m.providers) > 1 {
 			controls++
 		}
-		extra := min(layout.visualizerRows, max(0, bodyRows-controls-metadataPaneMinRows))
-		layout.coverRows += extra
-		layout.fixedRows += extra
-		layout.visualizerRows = layout.coverRows
+		cellWidth, cellHeight := m.cellSize()
+		rows := min(squareCoverRows(layout.settingsWidth, cellWidth, cellHeight),
+			layout.coverRows+max(0, bodyRows-controls-metadataPaneMinRows))
+		layout.fixedRows += rows - layout.coverRows
+		layout.coverRows = rows
+		layout.visualizerRows = rows
 	}
 
 	layout.fullVisualizerRows = max(1, height-6-2*paddingV)
