@@ -22,3 +22,8 @@ of scope. Remaining work, in suggested order:
   can do it, and where Esc returns.
 - [ ] "Go to artist": the same for the track's artist, once artist browsing
   exists.
+
+## Visualizer ideas
+
+- [ ] Album cover visualizer: a visualizer mode built from the cover art of
+  the playing track. Think through how it looks and reacts to the audio.
