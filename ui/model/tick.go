@@ -332,6 +332,8 @@ func (m *Model) handleTick(msg tickMsg) tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	m.tickExpire(now, dt)
+	m.tickCastLeft()
+	m.tickCastMute(now)
 	m.tickStreamHealth(now)
 	if cmd := m.tickStreamTitle(); cmd != nil {
 		cmds = append(cmds, cmd)

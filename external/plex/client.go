@@ -32,6 +32,7 @@ type Client struct {
 	libraries []string // if non-empty, MusicSections filters to these titles (case-insensitive)
 	account   *accountBinding
 	machineID string // server identifier for play queue URIs, read once
+	cast      *castServer
 }
 
 type accountBinding struct {
@@ -175,6 +176,13 @@ func (c *Client) get(path string, params url.Values, result any) error {
 // request issues an authenticated request and decodes the JSON response into
 // result.
 func (c *Client) request(method, path string, params url.Values, result any) error {
+	return c.requestAs(c.clientID, method, path, params, result)
+}
+
+// requestAs is request on behalf of clientID. The server keeps one play queue
+// per client, so a play queue that must not end another one, such as the
+// one a Cast device plays beside a station, is made as another client.
+func (c *Client) requestAs(clientID, method, path string, params url.Values, result any) error {
 	baseURL, token, err := c.endpoint(context.Background())
 	if err != nil {
 		return fmt.Errorf("plex: connect account server: %w", err)
@@ -190,7 +198,7 @@ func (c *Client) request(method, path string, params url.Values, result any) err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "cliamp")
-	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
+	req.Header.Set("X-Plex-Client-Identifier", clientID)
 
 	resp, err := apiClient.Do(req)
 	if err != nil {

@@ -181,6 +181,37 @@ Or set it in configuration:
 provider = "plex"
 ```
 
+## Play on a Cast device
+
+cliamp can play Plex tracks on a Google Cast device, such as a Chromecast or
+an Android TV like an NVIDIA SHIELD, the way Plexamp casts. The device plays
+the original file from your server, with the cover and track details on
+screen; cliamp stays the remote.
+
+Press `d` to open **Play on**. It lists the audio outputs of this computer
+under **This device** and searches the local network for Cast devices, which
+appear under **Cast** within two seconds. Choose a Cast device and press
+`Enter`: the playing track goes on there from the same position, and the
+status line shows `Playing on <device>`. Space, `>` and `<`, seeking, and
+`Ctrl+O` then work on the device, and the next track starts there when one
+ends, stations and song mixes included. Choose an output under **This device**
+to bring playback back to this computer, again from the same position. A dot
+marks where the sound plays.
+
+- Only Plex tracks play on a Cast device. Playing another track, such as a
+  local file, brings playback back here, and the Cast devices show
+  `(Plex tracks only)` while one plays.
+- Tracks start one by one on the device, so there is a pause of a second or
+  two between them.
+- The volume keys set the device volume. A TV that sets the volume itself,
+  such as one in a fixed-output mode, ignores them.
+- When the device ends the session, for example when someone opens another
+  app on the TV or casts from a phone, cliamp stops playback and goes back to
+  this computer. Quitting cliamp ends the session on the device.
+- The visualizer is empty while the sound plays elsewhere.
+- Plex apps on phones, tablets, and computers are not Cast devices and do not
+  appear.
+
 ## How it works
 
 cliamp calls the Plex HTTP API to list audio playlists (`/playlists`) and music library albums. When you select an entry, cliamp gets its track list from the playlist-items or album-children endpoint. Queues, playlists, favorites, history, resume state, and IPC keep only a token-free logical path:

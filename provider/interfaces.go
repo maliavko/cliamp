@@ -518,3 +518,19 @@ type ArtworkFetcher interface {
 	CanFetchArtwork(track playlist.Track) bool
 	FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error)
 }
+
+// CastLoader is implemented by providers whose tracks a Google Cast receiver
+// app can play, such as the Plex receiver on an Android TV. CanCast must not
+// do I/O because the UI calls it on the Update goroutine; CastMedia runs from
+// a command goroutine.
+type CastLoader interface {
+	CanCast(track playlist.Track) bool
+	CastMedia(ctx context.Context, track playlist.Track) (CastMedia, error)
+}
+
+// CastMedia names the receiver app that plays a track and the "media" object
+// of the Cast LOAD request that starts it.
+type CastMedia struct {
+	AppID string
+	Media map[string]any
+}

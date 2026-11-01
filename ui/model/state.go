@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bjarneo/cliamp/applog"
+	"github.com/bjarneo/cliamp/internal/cast"
 	"github.com/bjarneo/cliamp/lyrics"
 	"github.com/bjarneo/cliamp/player"
 	"github.com/bjarneo/cliamp/playlist"
@@ -387,13 +388,19 @@ type reconnectState struct {
 	notice error
 }
 
-// devicePickerState holds state for the audio device picker overlay.
+// devicePickerState holds state for the "Play on" overlay: the local audio
+// outputs and the Cast devices on the network. cursor counts the entries of
+// both, local first; scroll counts rendered lines, section headers included.
 type devicePickerState struct {
 	visible bool
 	devices []player.AudioDevice
 	cursor  int
 	scroll  int
 	loading bool
+
+	castDevices   []cast.Device
+	castSearching bool
+	castErr       string
 }
 
 type saveState struct {
