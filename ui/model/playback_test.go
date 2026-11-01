@@ -1651,15 +1651,18 @@ func TestNextTrackRulesAgree(t *testing.T) {
 }
 
 // An in-place Ctrl+R reload of the open playlist keeps the playing track
-// current, so the next track follows it rather than the first one. A new
-// playlist opened while a track plays still detaches it.
+// current, so the next track follows it rather than the first one. With
+// nothing playing, the current track stays current. A new playlist opened
+// while a track plays still detaches it.
 func TestInPlaceRefreshKeepsPlayingTrackCurrent(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		refreshed bool
+		stopped   bool
 		wantNext  string
 	}{
 		{name: "in-place refresh", refreshed: true, wantNext: "c.mp3"},
+		{name: "in-place refresh while stopped", refreshed: true, stopped: true, wantNext: "c.mp3"},
 		{name: "other playlist", wantNext: "a.mp3"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1668,7 +1671,7 @@ func TestInPlaceRefreshKeepsPlayingTrackCurrent(t *testing.T) {
 				{Title: "B", Path: "b.mp3", DurationSecs: 180},
 				{Title: "C", Path: "c.mp3", DurationSecs: 180},
 			}
-			player := &playbackFakeEngine{playing: true}
+			player := &playbackFakeEngine{playing: !tt.stopped}
 			p := playlist.New()
 			p.Replace(album)
 			p.SetIndex(1)
@@ -1678,7 +1681,9 @@ func TestInPlaceRefreshKeepsPlayingTrackCurrent(t *testing.T) {
 				provider: commandsTestProvider{name: "Test"},
 				vis:      ui.NewVisualizer(float64(player.SampleRate())),
 			}
-			m.setPlaybackTrack(album[1])
+			if !tt.stopped {
+				m.setPlaybackTrack(album[1])
+			}
 			m.requests.tracks = 1
 			if tt.refreshed {
 				m.requests.refreshedTracks = 1
