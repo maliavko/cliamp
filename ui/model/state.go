@@ -318,6 +318,9 @@ type requestState struct {
 	stream                uint64
 	preload               uint64
 	queue                 uint64
+	// refreshedTracks is the tracks request of an in-place Ctrl+R reload,
+	// whose result keeps the playing track current.
+	refreshedTracks uint64
 }
 
 func nextRequest(gen *uint64) uint64 {

@@ -110,6 +110,11 @@ func (m *Model) handleTracksLoaded(msg tracksLoadedMsg) tea.Cmd {
 		if msg.playlistExact {
 			m.setLoadedLocalPlaylist(msg.providerName, msg.playlistID)
 		}
+		if msg.gen == m.requests.refreshedTracks {
+			if i, ok := m.reattachPlayback(msg.tracks); ok {
+				m.plCursor = i
+			}
+		}
 	}
 	if msg.next > 0 {
 		m.adjustScroll()

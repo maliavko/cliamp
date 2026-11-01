@@ -239,7 +239,9 @@ func (m *Model) refreshActiveProvider(tracksOnly bool) tea.Cmd {
 	m.radioListenersAt = time.Time{}
 	m.status.Activityf(statusTTLShort, "Refreshing %s…", m.provider.Name())
 	if inPlace {
-		return m.fetchProviderTracks(m.activeProviderPlaylistID)
+		cmd := m.fetchProviderTracks(m.activeProviderPlaylistID)
+		m.requests.refreshedTracks = m.requests.tracks
+		return cmd
 	}
 	m.activeProviderPlaylistID = ""
 	return m.fetchProviderPlaylists()

@@ -50,6 +50,22 @@ func (m *Model) detachPlaybackTrack() {
 	m.playbackDetached = true
 }
 
+// reattachPlayback makes the playing track the current track of the queue
+// that was just replaced with tracks, when they hold it, so the next track
+// follows it there. It returns the track's index.
+func (m *Model) reattachPlayback(tracks []playlist.Track) (int, bool) {
+	i := trackIndexByPath(tracks, m.playingTrack.Path)
+	if !m.playingTrackActive || i < 0 {
+		return -1, false
+	}
+	m.playlist.SetIndex(i)
+	m.playbackDetached = false
+	if t, ok := m.playlist.Track(i); ok {
+		m.playingTrack = t
+	}
+	return i, true
+}
+
 func (m *Model) clearPlaybackTrack() {
 	m.playingTrack = playlist.Track{}
 	m.playingTrackActive = false
