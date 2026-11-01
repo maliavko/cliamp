@@ -46,23 +46,9 @@ func (p *Provider) CastMedia(ctx context.Context, track playlist.Track) (provide
 }
 
 func (c *Client) castMedia(ctx context.Context, ratingKey string) (provider.CastMedia, error) {
-	baseURL, token, err := c.endpoint(ctx)
-	if err != nil {
-		return provider.CastMedia{}, fmt.Errorf("plex: cast: connect: %w", err)
-	}
 	server, err := c.castServer(ctx)
 	if err != nil {
 		return provider.CastMedia{}, err
-	}
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return provider.CastMedia{}, fmt.Errorf("plex: cast: server URL: %w", err)
-	}
-	port := 32400
-	if p := u.Port(); p != "" {
-		port, _ = strconv.Atoi(p)
-	} else if u.Scheme == "https" {
-		port = 443
 	}
 
 	var created struct {
@@ -81,6 +67,23 @@ func (c *Client) castMedia(ctx context.Context, ratingKey string) (provider.Cast
 	}
 	if created.MediaContainer.PlayQueueID == 0 {
 		return provider.CastMedia{}, fmt.Errorf("plex: cast: no play queue")
+	}
+
+	// The requests above may have moved to another server route, so the
+	// address the receiver gets is read after them.
+	baseURL, token, err := c.endpoint(ctx)
+	if err != nil {
+		return provider.CastMedia{}, fmt.Errorf("plex: cast: connect: %w", err)
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return provider.CastMedia{}, fmt.Errorf("plex: cast: server URL: %w", err)
+	}
+	port := 32400
+	if p := u.Port(); p != "" {
+		port, _ = strconv.Atoi(p)
+	} else if u.Scheme == "https" {
+		port = 443
 	}
 
 	// The receiver fetches the queue and the stream itself, so customData

@@ -959,6 +959,8 @@ func failoverFixture(t *testing.T, dead *httptest.Server) (*Client, *httptest.Se
 			w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"3","type":"artist","title":"Music"}]}}`))
 		case "/:/timeline":
 			w.WriteHeader(http.StatusOK)
+		case "/playQueues":
+			w.Write([]byte(`{"MediaContainer":{"playQueueID":77}}`))
 		default:
 			http.NotFound(w, r)
 		}
