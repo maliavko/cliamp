@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/bjarneo/cliamp/playlist"
@@ -47,4 +49,32 @@ func TestCastMediaMakesItsOwnQueue(t *testing.T) {
 		server["machineIdentifier"] != "machine" || server["accessToken"] != "tok" {
 		t.Fatalf("media = %#v", media)
 	}
+}
+
+// When the route dies before a cast, the receiver gets the address the
+// play queue request failed over to, not the dead one.
+func TestCastMediaNamesTheRouteAfterFailover(t *testing.T) {
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	c, alive, _ := failoverFixture(t, dead)
+	c.cast = &castServer{machineID: "server-1", version: "1.0", username: "me"}
+
+	media, err := newProvider(c).CastMedia(context.Background(), playlist.Track{Path: "plex:track:42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := media.Media["customData"].(map[string]any)["server"].(map[string]any)
+	want, _ := url.Parse(alive.URL)
+	if server["address"] != want.Hostname() || server["port"] != mustAtoi(t, want.Port()) {
+		t.Fatalf("receiver gets %v:%v, want the live route %s", server["address"], server["port"], want.Host)
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
