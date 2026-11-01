@@ -326,6 +326,8 @@ type Model struct {
 	audioDevice string
 	// Core playback
 	player        player.Engine
+	cast          castState // playback on a Cast device, which m.player then drives
+	castMute      castMute  // the local engine is silent until a track back from a Cast device seeks
 	playlist      *playlist.Playlist
 	configSaver   ConfigSaver
 	vis           *ui.Visualizer

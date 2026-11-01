@@ -215,32 +215,19 @@ func (m Model) renderThemeBody() string {
 // — device picker —
 
 func (m Model) deviceHeaderLine() string {
-	if m.devicePicker.loading {
-		return sepHeader("Audio Devices", m.layout.panelWidth)
+	entries := m.deviceEntries()
+	if len(entries) == 0 {
+		return sepHeader("Play on", m.layout.panelWidth)
 	}
-	return sepHeaderN("Audio Devices", m.devicePicker.cursor+1, len(m.devicePicker.devices), m.layout.panelWidth)
+	return sepHeaderN("Play on", m.devicePicker.cursor+1, len(entries), m.layout.panelWidth)
 }
 
 func (m Model) renderDeviceBody() string {
 	budget := m.effectivePlaylistVisible()
-	if m.devicePicker.loading {
-		return bodyLines([]string{loadingLine("Loading devices…")}, budget)
-	}
-	if len(m.devicePicker.devices) == 0 {
-		return bodyMessage("No audio output devices found.", budget)
-	}
-	items := make([]string, len(m.devicePicker.devices))
-	for i, d := range m.devicePicker.devices {
-		label := d.Description
-		if label == "" {
-			label = d.Name
-		}
-		if d.Active {
-			label += " " + activeToggle.Render("●")
-		}
-		items[i] = label
-	}
-	return windowList(items, m.devicePicker.cursor, m.devicePicker.scroll, budget)
+	lines, cursorLine := m.deviceLines()
+	scroll := clampedScroll(m.devicePicker.scroll, cursorLine, len(lines), budget)
+	end := min(len(lines), scroll+budget)
+	return bodyLines(lines[scroll:end], budget)
 }
 
 // — queue —
