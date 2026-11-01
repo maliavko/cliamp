@@ -366,6 +366,11 @@ func (m *Model) findTrackPosition(track playlist.Track) provider.TrackPosition {
 // findPlaybackReporter returns the first registered provider that can report
 // playback for the given track.
 func (m *Model) findPlaybackReporter(track playlist.Track) provider.PlaybackReporter {
+	// A Cast receiver reports its own playback to the server, so a report
+	// from here would count the listen twice.
+	if m.casting() {
+		return nil
+	}
 	reporter, _ := findCapable(m, func(r provider.PlaybackReporter) bool { return r.CanReportPlayback(track) })
 	return reporter
 }

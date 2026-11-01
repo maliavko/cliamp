@@ -657,6 +657,10 @@ func (m Model) renderTimeStatus() string {
 	default:
 		status = dimStyle.Render("■ Stopped")
 	}
+	if name := m.castDeviceName(); name != "" {
+		// The sound is on another device, so name it.
+		status += dimStyle.Render(" on ") + statusStyle.Render(name)
+	}
 
 	left := timeStyle.Render(timeStr)
 	gap := max(m.layout.panelWidth-lipgloss.Width(left)-lipgloss.Width(status), 1)

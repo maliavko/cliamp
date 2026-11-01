@@ -415,6 +415,7 @@ func (m *Model) undoPlaylistMutation() tea.Cmd {
 // pipeline, such as the yt-dlp | ffmpeg chain for a yt-dlp page URL.
 func (m *Model) playTrack(track playlist.Track) tea.Cmd {
 	m.pausedAt = time.Time{}
+	m.uncastFor(track)
 	if track.Feed || playlist.IsFeed(track.Path) {
 		m.feedLoading = true
 		m.feedRequest = nextRequest(&m.requests.queue)
