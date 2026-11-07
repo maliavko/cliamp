@@ -394,6 +394,14 @@ func (m *Model) undoPlaylistMutation() tea.Cmd {
 		}
 	}
 	m.playlist.Restore(undo.snapshot)
+	// After a song mix the restored queue need not hold the playing song
+	// at its current row. Playback then goes on detached, and the queue
+	// resumes from its current row when the song ends.
+	if m.playingTrackActive {
+		if cur, idx := m.playlist.Current(); idx < 0 || cur.Path != m.playingTrack.Path {
+			m.playbackDetached = true
+		}
+	}
 	m.normalizeQueueOverlay()
 	// The restored queue can be another list altogether, such as the one a
 	// song mix replaced, so its album headers follow its own tracks.
