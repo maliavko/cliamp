@@ -160,6 +160,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.handleTracksLoaded(msg)
 		return m, cmd
 
+	case albumOpenedMsg:
+		return m, m.handleAlbumOpened(msg)
+
 	case navArtistsLoadedMsg:
 		m.handleNavArtistsLoaded(msg)
 		return m, nil
@@ -182,6 +185,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case catalogSearchMsg:
 		m.handleCatalogSearch(msg)
+		return m, nil
+
+	case queueContinuedMsg:
+		m.handleQueueContinued(msg)
 		return m, nil
 
 	case ytdlBatchMsg:
@@ -382,6 +389,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case trackRatingSyncedMsg:
 		m.handleTrackRatingSynced(msg)
+		return m, nil
+
+	case trackFavoritesLoadedMsg:
+		// The provider now knows the state; the redraw shows it.
 		return m, nil
 
 	case ShowStatusMsg:
