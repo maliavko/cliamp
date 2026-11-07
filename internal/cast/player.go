@@ -240,16 +240,26 @@ const endSlack = 3 * time.Second
 // endSlack of its end counts as finished too. An error ends it as well, so
 // the UI moves on. The position stays where it was. The caller holds p.mu.
 func (p *Player) applyIdle(st MediaStatus) {
-	nearEnd := p.duration > 0 && p.positionLocked() >= p.duration-endSlack
 	switch {
-	case st.IdleReason == IdleFinished, st.IdleReason == "" && nearEnd:
-		p.base, p.baseAt = p.positionLocked(), time.Now()
-		p.state, p.drained = StateIdle, true
+	case st.IdleReason == IdleFinished, st.IdleReason == "" && p.nearEndLocked():
+		p.endTrackLocked()
 	case st.IdleReason == "ERROR":
-		p.base, p.baseAt = p.positionLocked(), time.Now()
-		p.state, p.drained = StateIdle, true
+		p.endTrackLocked()
 		p.err = errors.New("cast: the device could not play the track")
 	}
+}
+
+// nearEndLocked reports whether the track is within endSlack of its end. The
+// caller holds p.mu.
+func (p *Player) nearEndLocked() bool {
+	return p.duration > 0 && p.positionLocked() >= p.duration-endSlack
+}
+
+// endTrackLocked marks the track as played to its end, keeping its position.
+// The caller holds p.mu.
+func (p *Player) endTrackLocked() {
+	p.base, p.baseAt = p.positionLocked(), time.Now()
+	p.state, p.drained = StateIdle, true
 }
 
 // startSeek moves a track that started muted to startAt once its position
@@ -294,6 +304,13 @@ func (p *Player) applyReceiver(payload map[string]any) {
 		return
 	}
 	if app, ok := st.App(p.app.AppID); !ok || app.SessionID != p.app.SessionID {
+		// The Plex receiver closes itself when its one-track queue ends,
+		// sometimes before it reports the track idle. At the end of the track
+		// that is the end of the track, and the next one launches it again.
+		if p.drained || p.nearEndLocked() {
+			p.endTrackLocked()
+			return
+		}
 		p.loaded, p.left = false, true
 	}
 }

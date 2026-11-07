@@ -106,6 +106,39 @@ func TestIdleEndsTrackNearItsEnd(t *testing.T) {
 	}
 }
 
+// The Plex receiver closes itself at the end of a track, at times before it
+// reports the track idle. At the end, or after the idle report, that ends the
+// track; mid-track the device ended the session.
+func TestAppClosingAtTheEndEndsTrack(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		at      time.Duration
+		idle    bool
+		drained bool
+	}{
+		{name: "near the end", at: 296 * time.Second, drained: true},
+		{name: "after the idle report", at: 296 * time.Second, idle: true, drained: true},
+		{name: "mid-track", at: 100 * time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewPlayer(Device{}, nil)
+			p.loaded, p.session, p.state = true, 1, StatePlaying
+			p.app = App{AppID: "9AC194DC", SessionID: "s1", TransportID: "t1"}
+			p.duration = 297 * time.Second
+			p.base, p.baseAt = tt.at, time.Now()
+			if tt.idle {
+				p.applyStatus([]MediaStatus{{SessionID: 1, PlayerState: StateIdle}})
+			}
+			p.applyReceiver(map[string]any{"type": "RECEIVER_STATUS", "status": map[string]any{
+				"applications": []any{map[string]any{"appId": "E8C28D3C", "sessionId": "home", "transportId": "t0"}},
+			}})
+			if p.Drained() != tt.drained || p.IsPlaying() != tt.drained || p.Left() == tt.drained {
+				t.Fatalf("drained %v, playing %v, left %v; want drained and playing %v", p.Drained(), p.IsPlaying(), p.Left(), tt.drained)
+			}
+		})
+	}
+}
+
 // A volume change smaller than the device step still moves one step, on the
 // device's grid.
 func TestVolumeMovesByDeviceStep(t *testing.T) {
