@@ -68,11 +68,15 @@ func (m *Model) editText(field string, value *string, msg tea.KeyPressMsg) bool 
 		*value = (*value)[editor.cursor:]
 		editor.cursor = 0
 	default:
-		if msg.Text == "" {
+		text := msg.Text
+		if m.typedText != "" {
+			text = m.typedText
+		}
+		if text == "" {
 			return false
 		}
-		*value = (*value)[:editor.cursor] + msg.Text + (*value)[editor.cursor:]
-		editor.cursor += len(msg.Text)
+		*value = (*value)[:editor.cursor] + text + (*value)[editor.cursor:]
+		editor.cursor += len(text)
 	}
 	return true
 }

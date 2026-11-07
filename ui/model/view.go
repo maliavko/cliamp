@@ -241,6 +241,7 @@ func (m Model) View() tea.View {
 			view.ForegroundColor = ui.ColorText
 		}
 		view.AltScreen = true
+		view.KeyboardEnhancements = keyboardEnhancements
 		return view
 	}
 
@@ -277,6 +278,7 @@ func (m Model) View() tea.View {
 		view.ForegroundColor = ui.ColorText
 	}
 	view.AltScreen = true
+	view.KeyboardEnhancements = keyboardEnhancements
 	view.WindowTitle = currentTerminalTitle(m.termTitle, m.width, m.terminalTitleValues())
 	return view
 }
