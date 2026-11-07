@@ -137,6 +137,12 @@ the server, the one it streams, to the [download
 directory](configuration.md#download-directory) as `Artist - Title.flac` (or
 the file's own extension). A track saved before is not downloaded again.
 
+A song mix (`c` on a Plex track) plays the tracks that sound most like it,
+from the server's sonic analysis, which needs Plex Pass. cliamp adds them
+`song_mix_size` at a time (30 by default), at most two of one artist in each
+batch and none twice; when the last track of a batch starts, the next batch
+is appended, so the mix plays on without end. A server without sonic analysis finds no tracks for a mix.
+
 Press `Ctrl+R` while an open Plex album or playlist is focused to reload it
 and pick up server-side changes. Album contents are cached for up to five
 minutes; Plex playlists are always loaded fresh so smart playlists stay current.
