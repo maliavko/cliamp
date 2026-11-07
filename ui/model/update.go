@@ -288,11 +288,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case devicesListedMsg:
 		m.devicePicker.loading = false
 		if msg.err != nil {
+			// The Cast devices still show, so the picker stays open.
 			m.status.Errorf(statusTTLDefault, "Device list failed: %s", msg.err)
-			m.devicePicker.visible = false
 		} else {
 			m.devicePicker.devices = msg.devices
 		}
+		m.deviceMaybeAdjustScroll(m.effectivePlaylistVisible())
+		return m, nil
+
+	case castDevicesMsg:
+		m.handleCastDevices(msg)
 		return m, nil
 
 	case deviceSwitchedMsg:

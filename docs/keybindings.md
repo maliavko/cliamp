@@ -127,7 +127,7 @@ and `Esc` clears it.
 | `*` then `0`-`5` | Set the selected Navidrome track's rating. `0` clears it. The playing track shows `★N`, and Linux MPRIS reports the normalized rating. |
 | `Ctrl+F` | Search with the active provider (Podcasts, Spotify, Qobuz, Tidal, Bandcamp, Navidrome, Lyrion, Jellyfin, Emby, Plex, Audiobookshelf, Mixcloud, NetEase, SoundCloud, Yandex Music, Local), or search YouTube. Available in playlist and provider-browser views. The search line names the source. See [Search and filter modes](#search-and-filter-modes). |
 | `u` | Load URL (stream/playlist) |
-| `d` | Open the audio device picker |
+| `d` | Open "Play on": the audio outputs of this device and the Cast devices on the network, such as an Android TV. See [Plex: play on a Cast device](plex.md#play-on-a-cast-device) |
 | `y` | Show or close lyrics |
 | `r` | Retry lyrics lookup while lyrics are open |
 | `[` / `]` | Adjust synced-lyrics timing offset (−/+250 ms) while lyrics show timestamped lines |

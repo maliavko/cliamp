@@ -366,6 +366,11 @@ func (m *Model) findTrackPosition(track playlist.Track) provider.TrackPosition {
 // findPlaybackReporter returns the first registered provider that can report
 // playback for the given track.
 func (m *Model) findPlaybackReporter(track playlist.Track) provider.PlaybackReporter {
+	// A Cast receiver reports its own playback to the server, so a report
+	// from here would count the listen twice.
+	if m.casting() {
+		return nil
+	}
 	reporter, _ := findCapable(m, func(r provider.PlaybackReporter) bool { return r.CanReportPlayback(track) })
 	return reporter
 }
@@ -382,10 +387,11 @@ const progressJump = 2 * time.Second
 // providers that accept them, at most once per progressReportInterval, and at
 // once after a seek. A TimelineReporter also hears of a pause and a resume at
 // once and keeps getting the paused position; the others hear nothing while
-// paused. No report goes out while the track buffers, since its position
-// is not settled yet.
+// paused. No report goes out while the position is unsettled: while the
+// track buffers, or while a track back from a Cast device seeks to where the
+// device was.
 func (m *Model) tickProgressReport(now time.Time) {
-	if m.player == nil || !m.player.IsPlaying() || m.buffering {
+	if m.player == nil || !m.player.IsPlaying() || m.buffering || m.castMute.active {
 		return
 	}
 	paused := m.player.IsPaused()

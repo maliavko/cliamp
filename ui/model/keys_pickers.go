@@ -81,7 +81,10 @@ func (m *Model) handleVisPickerKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) deviceMaybeAdjustScroll(visible int) {
-	clampScroll(&m.devicePicker.cursor, &m.devicePicker.scroll, len(m.devicePicker.devices), visible)
+	n := len(m.deviceEntries())
+	m.devicePicker.cursor = min(max(0, m.devicePicker.cursor), max(0, n-1))
+	lines, cursorAt := m.deviceLines()
+	m.devicePicker.scroll = clampedScroll(m.devicePicker.scroll, cursorAt, len(lines), visible)
 }
 
 // handleDeviceKey processes key presses while the audio device picker is open.
@@ -91,25 +94,35 @@ func (m *Model) handleDeviceKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.toggleExpandedView()
 		m.deviceMaybeAdjustScroll(m.effectivePlaylistVisible())
 	case "up", "k":
-		if m.devicePicker.cursor > 0 {
+		if n := len(m.deviceEntries()); m.devicePicker.cursor > 0 {
 			m.devicePicker.cursor--
-		} else if len(m.devicePicker.devices) > 0 {
-			m.devicePicker.cursor = len(m.devicePicker.devices) - 1
+		} else if n > 0 {
+			m.devicePicker.cursor = n - 1
 		}
 		m.deviceMaybeAdjustScroll(m.effectivePlaylistVisible())
 	case "down", "j":
-		if m.devicePicker.cursor < len(m.devicePicker.devices)-1 {
+		if n := len(m.deviceEntries()); m.devicePicker.cursor < n-1 {
 			m.devicePicker.cursor++
-		} else if len(m.devicePicker.devices) > 0 {
+		} else if n > 0 {
 			m.devicePicker.cursor = 0
 		}
 		m.deviceMaybeAdjustScroll(m.effectivePlaylistVisible())
 	case "enter":
-		if len(m.devicePicker.devices) > 0 && m.devicePicker.cursor < len(m.devicePicker.devices) {
-			dev := m.devicePicker.devices[m.devicePicker.cursor]
-			m.devicePicker.visible = false
-			return switchDeviceCmd(dev.Name)
+		entries := m.deviceEntries()
+		if m.devicePicker.cursor >= len(entries) {
+			return nil
 		}
+		entry := entries[m.devicePicker.cursor]
+		m.devicePicker.visible = false
+		if entry.cast != nil {
+			return m.castTo(*entry.cast)
+		}
+		// A local output brings the sound back from a Cast device first.
+		back, _ := m.castBack()
+		if entry.local.Active {
+			return back
+		}
+		return tea.Batch(back, switchDeviceCmd(entry.local.Name))
 	case "esc", "d", "q":
 		m.devicePicker.visible = false
 	}

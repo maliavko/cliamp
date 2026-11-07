@@ -285,7 +285,8 @@ audio_device = "alsa_output.usb-FiiO_K5_Pro-00.analog-stereo"
   the system default output instead.
 
 When you select a device with `d` or `cliamp device <name>`, the TUI saves it to
-`audio_device`. To use a different device for one session, run
+`audio_device`. The `d` picker also lists the Cast devices on the network
+under **Cast**; see [Plex: play on a Cast device](plex.md#play-on-a-cast-device). To use a different device for one session, run
 `cliamp --audio-device <name>`.
 
 ## Value syntax

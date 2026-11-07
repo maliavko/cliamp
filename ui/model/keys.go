@@ -828,10 +828,15 @@ func (m *Model) handleMainKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.devicePicker.visible = true
 		m.devicePicker.cursor = 0
 		m.devicePicker.scroll = 0
+		// Cast devices come and go, so each open searches anew.
+		m.devicePicker.castSearching = true
+		m.devicePicker.castErr = ""
+		cmds := []tea.Cmd{discoverCastCmd()}
 		if len(m.devicePicker.devices) == 0 {
 			m.devicePicker.loading = true
-			return listDevicesCmd()
+			cmds = append(cmds, listDevicesCmd())
 		}
+		return tea.Batch(cmds...)
 
 	case "]":
 		m.changeSpeed(0.25)
