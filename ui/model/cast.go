@@ -121,6 +121,10 @@ func (m *Model) castTo(device cast.Device) tea.Cmd {
 		old := m.cast.player
 		go old.Close()
 	} else {
+		// The device reports its own listen, so the one here ends.
+		if playing {
+			m.reportStopped(track, position)
+		}
 		m.cast.local = m.player
 		m.player.Stop()
 	}
@@ -143,6 +147,8 @@ func (m *Model) castBack() (tea.Cmd, bool) {
 	playing := idx >= 0 && m.player.IsPlaying()
 	position := m.player.Position()
 	m.releaseCast()
+	// The listen goes on here, so the next tick reports its position.
+	m.lastProgressReport = time.Time{}
 	m.status.Show("Playing on this device", statusTTLDefault)
 	if !playing {
 		return nil, true

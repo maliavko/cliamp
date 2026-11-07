@@ -149,3 +149,22 @@ func TestCastMuteLiftsAfterSeek(t *testing.T) {
 		})
 	}
 }
+
+// Handing a track to a Cast device ends its listen here, since the device
+// reports its own; while it plays there, nothing more goes out from here.
+func TestCastEndsLocalListen(t *testing.T) {
+	m := castTestModel()
+	prov := newTimelineProv()
+	m.providers = append(m.providers, provider.Entry{Key: "timeline", Name: "Timeline", Provider: prov})
+	track := playlist.Track{Path: "cast:1", Title: "One"}
+	m.playlist.Replace([]playlist.Track{track})
+	m.playlist.SetIndex(0)
+	engine := m.player.(*playbackFakeEngine)
+	engine.playing, engine.position = true, 42*time.Second
+	m.playingTrack, m.playingTrackActive, m.playingTrackStarted = track, true, true
+
+	m.castTo(tv)
+	prov.expect(t, "stopped 42s")
+	m.tickProgressReport(time.Now())
+	prov.expect(t, "")
+}

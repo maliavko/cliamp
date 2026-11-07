@@ -355,13 +355,23 @@ func TestTickProgressReportsSeek(t *testing.T) {
 	}
 }
 
-// No report goes out while the track buffers.
-func TestTickProgressReportWaitsForBuffering(t *testing.T) {
-	prov := newTimelineProv()
-	m := timelineModel(prov, &playbackFakeEngine{playing: true})
-	m.buffering = true
-	m.tickProgressReport(time.Now())
-	prov.expect(t, "")
+// No report goes out while the position is unsettled.
+func TestTickProgressReportWaitsForPosition(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		set  func(*Model)
+	}{
+		{name: "buffering", set: func(m *Model) { m.buffering = true }},
+		{name: "back from Cast", set: func(m *Model) { m.castMute.active = true }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prov := newTimelineProv()
+			m := timelineModel(prov, &playbackFakeEngine{playing: true})
+			tt.set(&m)
+			m.tickProgressReport(time.Now())
+			prov.expect(t, "")
+		})
+	}
 }
 
 // Leaving a track scrobbles it past half its length; before that, a

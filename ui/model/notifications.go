@@ -387,10 +387,11 @@ const progressJump = 2 * time.Second
 // providers that accept them, at most once per progressReportInterval, and at
 // once after a seek. A TimelineReporter also hears of a pause and a resume at
 // once and keeps getting the paused position; the others hear nothing while
-// paused. No report goes out while the track buffers, since its position
-// is not settled yet.
+// paused. No report goes out while the position is unsettled: while the
+// track buffers, or while a track back from a Cast device seeks to where the
+// device was.
 func (m *Model) tickProgressReport(now time.Time) {
-	if m.player == nil || !m.player.IsPlaying() || m.buffering {
+	if m.player == nil || !m.player.IsPlaying() || m.buffering || m.castMute.active {
 		return
 	}
 	paused := m.player.IsPaused()
