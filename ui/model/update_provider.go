@@ -106,9 +106,14 @@ func (m *Model) handleTracksLoaded(msg tracksLoadedMsg) tea.Cmd {
 			m.preloading = false
 		}
 	} else {
+		refreshed := msg.gen == m.requests.refreshedTracks
+		current, _ := m.playlist.Current()
 		m.replacePlayerPlaylist(msg.tracks)
 		if msg.playlistExact {
 			m.setLoadedLocalPlaylist(msg.providerName, msg.playlistID)
+		}
+		if refreshed {
+			m.keepCurrentAfterRefresh(msg.tracks, current)
 		}
 	}
 	if msg.next > 0 {
@@ -123,6 +128,20 @@ func (m *Model) handleTracksLoaded(msg tracksLoadedMsg) tea.Cmd {
 	m.applyTracksResume(msg)
 	m.adjustScroll()
 	return nil
+}
+
+// keepCurrentAfterRefresh keeps the place in the queue across an in-place
+// reload: the playing track stays current, and with nothing playing, so does
+// the track that was current before, such as one a restart restored.
+func (m *Model) keepCurrentAfterRefresh(tracks []playlist.Track, current playlist.Track) {
+	i, ok := m.reattachPlayback(tracks)
+	if !ok {
+		if i = trackIndexByPath(tracks, current.Path); i < 0 {
+			return
+		}
+		m.playlist.SetIndex(i)
+	}
+	m.plCursor = i
 }
 
 // handleCatalogBatch adds a batch of catalog entries to the provider pane.
