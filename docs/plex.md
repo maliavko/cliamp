@@ -123,7 +123,8 @@ Selecting a station asks the server for a new play queue, as Plexamp does, and
 loads it 30 tracks at a time: when the last loaded track starts, the next 30
 of the same queue are appended, so the station plays on without end. Press
 `Ctrl+R` while the station is open for a fresh selection. The `stations`
-setting picks which stations appear.
+setting picks which stations appear. Plex sends no artwork for stations, so
+cliamp shows a built-in radio cover for them.
 
 On a Plex track in the playlist, `Alt+O` opens its album: the queue becomes
 the album, the cursor lands on the track, and playback goes on; `Ctrl+Z`
@@ -149,6 +150,11 @@ the change does not discard old data. Press `Ctrl+R` to pick up likes changed
 in another client while the list is open.
 
 While a Plex track plays, cliamp reports its timeline position about every 15 seconds, so the Plex dashboard shows what plays. A pause, a resume, and a seek reach Plex at once. Leaving a track, by skipping, stopping, quitting, or casting it, ends its session on the dashboard. After at least half of a known-duration track has played, leaving the track records one Plex play and updates Plex history. Short skips do not increment the play count.
+
+With Metadata enabled in the full terminal layout, cliamp can show the
+authenticated Plex cover beside the visualizer without placing the Plex token
+in track metadata or the cache filename. See `cover_art` in
+[configuration](configuration.md#options).
 
 When Plex is the default provider (`provider = "plex"` or `--provider plex`),
 cliamp remembers the most recently played Plex track, its playback position,

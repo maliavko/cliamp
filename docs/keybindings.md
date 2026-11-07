@@ -131,8 +131,8 @@ and `Esc` clears it.
 | `y` | Show or close lyrics |
 | `r` | Retry lyrics lookup while lyrics are open |
 | `[` / `]` | Adjust synced-lyrics timing offset (−/+250 ms) while lyrics show timestamped lines |
-| `i` | From the playlist, open full info for the highlighted item, including Path (`Up`/`Down` or `j`/`k` scroll; `i`/`Esc`/`q` closes) |
-| `Ctrl+I` | Toggle Metadata below Settings for the highlighted playlist item (remembered in `show_metadata`; requires a terminal that distinguishes Ctrl+I from Tab) |
+| `i` | From the playlist, open full info for the highlighted item, including Path and its cover; long values wrap (`Up`/`Down` or `j`/`k` scroll; `i`/`Esc`/`q` closes) |
+| `Ctrl+I` | Toggle Metadata below Settings and the album cover beside the visualizer (remembered in `show_metadata`; requires a terminal that distinguishes Ctrl+I from Tab) |
 | `Ctrl+S` | Save track to `[downloads].directory` (default `~/Music/cliamp`). A Plex track saves its original file; one saved before is not downloaded again |
 | `w` | Write the highlighted track to a local playlist |
 | `Alt+O` | Open the album of the highlighted track: the queue becomes the album with the cursor on that track, and playback goes on. `Ctrl+Z` brings the old queue back. Plex tracks |
@@ -155,7 +155,8 @@ and `Esc` clears it.
 | `U` | Open Telegram provider |
 | `B` | Open Audiobookshelf provider |
 
-Metadata belongs to the main playback view, not provider browsers, and follows
+Metadata and the cover belong to the main playback view, not provider browsers.
+Metadata follows
 the highlighted playlist row even when another item is playing. Enabling it
 without a usable Settings sidebar opens the full info overlay instead; the
 preference remains saved for a wider layout. See
@@ -336,6 +337,7 @@ Navidrome, Podcasts, or Local Playlists:
 | `Ctrl+F` | Run the provider online or server search (Spotify, Navidrome, NetEase, and others). |
 | `Ctrl+R` | Refresh the provider: reload the currently open playlist or starting wave in place (e.g. a fresh Yandex "Моя волна" batch), or return to the playlist list. For Mixcloud, also clear the cached `/me/` identity. |
 | `p` | Open the playlist as an overlay (the Local source shows it directly; create, rename, delete, add dirs/tracks) |
+| `Ctrl+I` | Show or hide the Metadata column for providers that describe their entries (Plex): the cover and details of the album or playlist under the cursor. Same `show_metadata` preference as the main view. |
 | `S` `P` `J` `E` `B` `Y` `C` `X` `M` `Q` `T` `K` `L` `R` `O` | Switch to that provider |
 | `N` | Open the browser of the provider on screen |
 | `Tab` | Leave the provider pane and focus Source, or the first visible playback control |
@@ -344,7 +346,10 @@ Navidrome, Podcasts, or Local Playlists:
 
 Playlist rows show `Name · N tracks · 1h 23m` when the provider returns track
 counts and total duration. The header shows `Provider / Playlists`. The loaded
-playlist has a `▶` prefix. Spotify groups playlists under section headers (`── library ──`, `── your playlists ──`, `── followed playlists ──`). For configured accounts, Mixcloud shows Your Mixcloud first: Stream, then Favorites. It then
+playlist has a `▶` prefix. With Metadata on (`Ctrl+I`), Plex adds a column as
+wide as the Settings pane: the cover of the album or playlist under the cursor,
+then its artist, release date and label, genres, track count, and play count.
+The cover loads after the cursor rests on an entry. Spotify groups playlists under section headers (`── library ──`, `── your playlists ──`, `── followed playlists ──`). For configured accounts, Mixcloud shows Your Mixcloud first: Stream, then Favorites. It then
 shows Browse shortcuts, public collections, Discover charts, and a
 Latest/Popular pair for each locally favorited genre under Music Styles. Leaving
 a provider-pane Browse shortcut returns to the provider pane.

@@ -672,13 +672,30 @@ func (m Model) renderSpectrum() string {
 	if m.visualizerDisabled() {
 		return ""
 	}
+	cover := m.renderCover()
+	if cover != "" && !m.fullVis && m.cover.cols > 0 && m.cover.rows == m.layout.coverRows {
+		visWidth := m.layout.panelWidth - m.cover.cols - 1
+		visualizer := m.renderSpectrumAt(visWidth)
+		return joinPanesRow(
+			[]string{visualizer, "", cover},
+			[]int{visWidth, 1, m.cover.cols},
+			m.cover.rows,
+		)
+	}
+	return m.renderSpectrumAt(m.layout.panelWidth)
+}
+
+func (m Model) renderSpectrumAt(width int) string {
 	panes := m.regionPanes(ui.RegionVisualizer)
 	if len(panes) == 1 && panes[0].Pane == ui.PaneBuiltin {
 		// The shortcut only applies when the builtin is the whole region: at
 		// 100% the only pane can be a plugin, and it still has to render.
-		return m.vis.Render()
+		if width == m.layout.panelWidth {
+			return m.vis.Render()
+		}
+		return m.vis.RenderAt(width)
 	}
-	widths := ui.SplitWeights(m.layout.panelWidth, paneWeights(panes))
+	widths := ui.SplitWeights(width, paneWeights(panes))
 	blocks := make([]string, len(panes))
 	for i, pane := range panes {
 		if pane.Vis != "" {
@@ -719,6 +736,72 @@ func (m Model) renderFullVisualizer() string {
 	}
 
 	return strings.Join(sections, "\n")
+}
+
+// renderProviderBrowser draws the provider list, and with covers on, a
+// column right of it with the cover and description of the entry under the
+// cursor. The list is drawn narrower, so its rows and section separators end
+// before the column.
+func (m Model) renderProviderBrowser(budget int) string {
+	c, ok := m.listColumnGeometry()
+	if !ok {
+		return m.renderProviderList()
+	}
+	narrow := m
+	narrow.layout.panelWidth = c.listWidth
+	return joinPanesRow(
+		[]string{narrow.renderProviderList(), "", m.renderListColumn(c, budget)},
+		[]int{c.listWidth, columnGutterWidth, c.width},
+		budget,
+	)
+}
+
+// renderListColumn draws the browser column under its header: the cover area
+// when covers show, then the entry description wrapped to the column width.
+func (m Model) renderListColumn(c listColumn, budget int) string {
+	lines := make([]string, listCoverTop, budget)
+	if m.listColumnShowsCover() {
+		cover := ""
+		if m.listCover.cols == c.coverCols && m.listCover.rows == c.coverRows {
+			cover = m.listCover.render()
+		}
+		coverLines := strings.Split(cover, "\n")
+		for i := range c.coverRows {
+			line := ""
+			if cover != "" && i < len(coverLines) {
+				line = coverLines[i]
+			}
+			lines = append(lines, line)
+		}
+		lines = append(lines, "")
+	}
+	detailer, ok := m.provider.(provider.ListDetailer)
+	list, selected := m.selectedBrowserList()
+	if ok && selected {
+		if d, found := detailer.ListDetails(list); found {
+			lines = append(lines, listDescriptionLines(d, c.width)...)
+		}
+	}
+	return strings.Join(fitLines(lines, budget), "\n")
+}
+
+// listDescriptionLines wraps a browser entry description to width.
+func listDescriptionLines(d provider.ListDescription, width int) []string {
+	var lines []string
+	add := func(text string, style lipgloss.Style) {
+		if text = strings.TrimSpace(text); text == "" {
+			return
+		}
+		for _, line := range strings.Split(ansi.Wrap(text, width, ""), "\n") {
+			lines = append(lines, style.Render(line))
+		}
+	}
+	add(d.Title, trackStyle)
+	add(d.Subtitle, labelStyle)
+	for _, line := range d.Lines {
+		add(line, dimStyle)
+	}
+	return lines
 }
 
 // fullVisTopLine names what is playing, or just the source when the track has
@@ -926,6 +1009,12 @@ func (m Model) renderPlaylistHeader() string {
 			label += " / Filter"
 		case m.providerCatalogSearching():
 			label += " / Search results"
+		}
+		if c, ok := m.listColumnGeometry(); ok {
+			// Like the main view with Settings: the list header ends at the
+			// gutter and the column gets its own header.
+			return dimStyle.Render(labeledSeparator("", label, c.listWidth)) + columnGutter +
+				fillSeparator(sepHeader("Metadata", c.width), c.width)
 		}
 		return dimStyle.Render(labeledSeparator("", label, m.layout.panelWidth))
 	}
@@ -1175,7 +1264,7 @@ func (m Model) renderPlaylist() string {
 	}
 
 	if m.focus == focusProvider {
-		return m.renderProviderList()
+		return m.renderProviderBrowser(budget)
 	}
 
 	trackCount := m.playlist.Len()

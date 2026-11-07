@@ -2,11 +2,13 @@ package plex
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,9 @@ var (
 	_ provider.TrackDownloader     = (*Provider)(nil)
 	_ provider.TimelineReporter    = (*Provider)(nil)
 	_ provider.QueueContinuer      = (*Provider)(nil)
+	_ provider.ArtworkFetcher      = (*Provider)(nil)
+	_ provider.ListArtworkFetcher  = (*Provider)(nil)
+	_ provider.ListDetailer        = (*Provider)(nil)
 )
 
 // Provider implements playlist.Provider for a Plex Media Server.
@@ -70,6 +75,9 @@ type Provider struct {
 	playlistCache []playlist.PlaylistInfo
 	trackCache    map[string]trackCacheEntry
 	partKeys      map[string]string
+	artKeys       map[string]string
+	listArtKeys   map[string]string // PlaylistInfo.ID -> artwork path
+	listDetails   map[string]provider.ListDescription
 	favorites     map[string]bool
 	// albumKeys maps a track ratingKey to its album's, for tracks whose
 	// ProviderMeta predates the album key, such as a restored list.
@@ -124,12 +132,18 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 	p.mu.Unlock()
 
 	var lists []playlist.PlaylistInfo
+	listArt := make(map[string]string)
+	details := make(map[string]provider.ListDescription)
 
 	serverPlaylists, err := p.client.Playlists()
 	if err != nil {
 		return nil, fmt.Errorf("plex: list playlists: %w", err)
 	}
 	for _, pl := range serverPlaylists {
+		if pl.Thumb != "" {
+			listArt[prefixPlaylist+pl.RatingKey] = pl.Thumb
+		}
+		details[prefixPlaylist+pl.RatingKey] = playlistDescription(pl)
 		lists = append(lists, playlist.PlaylistInfo{
 			ID:           prefixPlaylist + pl.RatingKey,
 			Name:         pl.Title,
@@ -144,7 +158,7 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 		return nil, err
 	}
 	// Playlists, then radio stations, then albums.
-	lists = append(lists, p.stationLists(sections)...)
+	lists = append(lists, p.stationLists(sections, details)...)
 	for _, sec := range sections {
 		albums, err := p.client.Albums(sec.Key)
 		if err != nil {
@@ -155,6 +169,10 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 			if a.Year > 0 {
 				name = fmt.Sprintf("%s — %s (%d)", a.ArtistName, a.Title, a.Year)
 			}
+			if a.Thumb != "" {
+				listArt[a.RatingKey] = a.Thumb
+			}
+			details[a.RatingKey] = albumDescription(a)
 			lists = append(lists, playlist.PlaylistInfo{
 				ID:         a.RatingKey,
 				Name:       name,
@@ -170,6 +188,8 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 
 	p.mu.Lock()
 	p.playlistCache = lists
+	p.listArtKeys = listArt
+	p.listDetails = details
 	p.mu.Unlock()
 
 	return slices.Clone(lists), nil
@@ -180,8 +200,11 @@ func (p *Provider) Playlists() ([]playlist.PlaylistInfo, error) {
 func (p *Provider) Refresh() {
 	p.mu.Lock()
 	p.playlistCache = nil
+	p.listArtKeys = nil
+	p.listDetails = nil
 	p.trackCache = nil
 	p.partKeys = nil
+	p.artKeys = nil
 	p.favorites = nil
 	p.mu.Unlock()
 	p.client.RefreshConnection()
@@ -273,6 +296,12 @@ func (p *Provider) convertTracks(plexTracks []Track, limit int) []playlist.Track
 			p.partKeys = make(map[string]string)
 		}
 		p.partKeys[t.RatingKey] = t.PartKey
+		if t.Thumb != "" {
+			if p.artKeys == nil {
+				p.artKeys = make(map[string]string)
+			}
+			p.artKeys[t.RatingKey] = t.Thumb
+		}
 		if p.favorites == nil {
 			p.favorites = make(map[string]bool)
 		}
@@ -321,6 +350,12 @@ func (p *Provider) ResolveSource(uri string) (string, error) {
 			p.partKeys = make(map[string]string)
 		}
 		p.partKeys[id] = partKey
+		if track.Thumb != "" {
+			if p.artKeys == nil {
+				p.artKeys = make(map[string]string)
+			}
+			p.artKeys[id] = track.Thumb
+		}
 		if p.favorites == nil {
 			p.favorites = make(map[string]bool)
 		}
@@ -450,6 +485,42 @@ func (p *Provider) SetTrackFavorite(ctx context.Context, track playlist.Track, f
 	p.favorites[id] = favorite
 	p.mu.Unlock()
 	return nil
+}
+
+// CanFetchArtwork reports whether track belongs to Plex. A restored track may
+// not have its artwork path in memory yet; FetchArtwork restores it from the
+// item metadata before downloading the image.
+func (p *Provider) CanFetchArtwork(track playlist.Track) bool {
+	return plexTrackID(track) != ""
+}
+
+// FetchArtwork returns authenticated cover bytes without exposing a token in
+// the track or URL consumed by the UI.
+func (p *Provider) FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error) {
+	id := plexTrackID(track)
+	if id == "" {
+		return nil, fmt.Errorf("plex: artwork: track has no rating key")
+	}
+	p.mu.Lock()
+	artKey := p.artKeys[id]
+	p.mu.Unlock()
+	if artKey == "" {
+		item, err := p.client.Track(id)
+		if err != nil {
+			return nil, fmt.Errorf("plex: artwork metadata %s: %w", id, err)
+		}
+		artKey = item.Thumb
+		if artKey == "" {
+			return nil, fmt.Errorf("plex: track %s has no artwork", id)
+		}
+		p.mu.Lock()
+		if p.artKeys == nil {
+			p.artKeys = make(map[string]string)
+		}
+		p.artKeys[id] = artKey
+		p.mu.Unlock()
+	}
+	return p.client.Artwork(ctx, artKey)
 }
 
 // RestoreTrack claims a saved Plex track for the resume context. The path is
@@ -594,12 +665,11 @@ func (p *Provider) OpenTrackFile(ctx context.Context, track playlist.Track) (io.
 // stationLists returns the radio stations of the music sections as browser
 // entries, picked and ordered by the stations setting. A section whose
 // stations cannot be read is skipped: stations are an extra, not the library.
-func (p *Provider) stationLists(sections []Section) []playlist.PlaylistInfo {
+func (p *Provider) stationLists(sections []Section, details map[string]provider.ListDescription) []playlist.PlaylistInfo {
 	if p.stations != nil && len(p.stations) == 0 {
 		return nil
 	}
 	var lists []playlist.PlaylistInfo
-	titles := make(map[string]string) // station ID -> title without the library
 	for _, sec := range sections {
 		stations, err := p.client.Stations(sec.Key)
 		if err != nil {
@@ -613,7 +683,11 @@ func (p *Provider) stationLists(sections []Section) []playlist.PlaylistInfo {
 			}
 			id := prefixStation + st.Key
 			lists = append(lists, playlist.PlaylistInfo{ID: id, Name: name, Section: sectionRadio})
-			titles[id] = st.Title
+			details[id] = provider.ListDescription{
+				Title:    st.Title,
+				Subtitle: "Radio station",
+				Lines:    []string{"Plays on without end; Ctrl+R for a fresh selection"},
+			}
 		}
 	}
 	if p.stations == nil {
@@ -622,12 +696,132 @@ func (p *Provider) stationLists(sections []Section) []playlist.PlaylistInfo {
 	var picked []playlist.PlaylistInfo
 	for _, want := range p.stations {
 		for _, l := range lists {
-			if strings.EqualFold(titles[l.ID], want) {
+			if strings.EqualFold(details[l.ID].Title, want) {
 				picked = append(picked, l)
 			}
 		}
 	}
 	return picked
+}
+
+// stationArt is the cover of every radio station. Plex sends stations with
+// only a client-drawn icon, so the browser would show no cover for them.
+//
+//go:embed station.png
+var stationArt []byte
+
+// CanFetchListArtwork reports whether the last Playlists call returned
+// artwork for list. Radio stations always have the built-in cover. It does
+// no I/O.
+func (p *Provider) CanFetchListArtwork(list playlist.PlaylistInfo) bool {
+	if strings.HasPrefix(list.ID, prefixStation) {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.listArtKeys[list.ID] != ""
+}
+
+// FetchListArtwork downloads the cover of an album or the composite of a
+// playlist with the token in a request header, or returns the built-in
+// cover of a radio station.
+func (p *Provider) FetchListArtwork(ctx context.Context, list playlist.PlaylistInfo) ([]byte, error) {
+	if strings.HasPrefix(list.ID, prefixStation) {
+		return slices.Clone(stationArt), nil
+	}
+	p.mu.Lock()
+	path := p.listArtKeys[list.ID]
+	p.mu.Unlock()
+	if path == "" {
+		return nil, fmt.Errorf("plex: %s has no artwork", list.ID)
+	}
+	return p.client.Artwork(ctx, path)
+}
+
+// ListDetails describes an album or playlist from the last Playlists call.
+func (p *Provider) ListDetails(list playlist.PlaylistInfo) (provider.ListDescription, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	d, ok := p.listDetails[list.ID]
+	return d, ok
+}
+
+func albumDescription(a Album) provider.ListDescription {
+	d := provider.ListDescription{Title: a.Title, Subtitle: a.ArtistName}
+	released := a.Released
+	if released == "" && a.Year > 0 {
+		released = strconv.Itoa(a.Year)
+	}
+	if line := joinNonEmpty(" · ", released, a.Studio); line != "" {
+		d.Lines = append(d.Lines, line)
+	}
+	if len(a.Genres) > 0 {
+		d.Lines = append(d.Lines, strings.Join(a.Genres, ", "))
+	}
+	if a.TrackCount > 0 {
+		d.Lines = append(d.Lines, countLabel(a.TrackCount, "track"))
+	}
+	if line := playedLine(a.ViewCount, a.LastViewed); line != "" {
+		d.Lines = append(d.Lines, line)
+	}
+	return d
+}
+
+func playlistDescription(pl Playlist) provider.ListDescription {
+	d := provider.ListDescription{Title: pl.Title, Subtitle: "Playlist"}
+	if pl.Smart {
+		d.Subtitle = "Smart playlist"
+	}
+	length := ""
+	if pl.DurationSecs > 0 {
+		length = durationLabel(pl.DurationSecs)
+	}
+	tracks := ""
+	if pl.TrackCount > 0 {
+		tracks = countLabel(pl.TrackCount, "track")
+	}
+	if line := joinNonEmpty(" · ", tracks, length); line != "" {
+		d.Lines = append(d.Lines, line)
+	}
+	if line := playedLine(pl.ViewCount, pl.LastViewed); line != "" {
+		d.Lines = append(d.Lines, line)
+	}
+	return d
+}
+
+func joinNonEmpty(sep string, parts ...string) string {
+	return strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), sep)
+}
+
+func countLabel(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return strconv.Itoa(n) + " " + noun + "s"
+}
+
+// durationLabel formats a list length as "42 min" or "3 h 05 min".
+func durationLabel(secs int) string {
+	minutes := (secs + 30) / 60
+	if minutes < 60 {
+		return strconv.Itoa(minutes) + " min"
+	}
+	return fmt.Sprintf("%d h %02d min", minutes/60, minutes%60)
+}
+
+// playedLine reports how often an entry played and the month it last did.
+func playedLine(count int, lastViewed int64) string {
+	if count <= 0 {
+		return ""
+	}
+	line := "Played " + strconv.Itoa(count) + " times"
+	if count == 1 {
+		line = "Played once"
+	}
+	if lastViewed > 0 {
+		line += " · " + time.Unix(lastViewed, 0).Format("Jan 2006")
+	}
+	return line
 }
 
 func plexTrackID(track playlist.Track) string {

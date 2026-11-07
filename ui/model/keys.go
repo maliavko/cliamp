@@ -331,6 +331,8 @@ func (m *Model) handleProviderPaneKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "q":
 		return m.quit()
+	case "ctrl+i":
+		m.toggleMetadataInPlace()
 	case "F":
 		m.openSubsOverlay()
 	case "l":

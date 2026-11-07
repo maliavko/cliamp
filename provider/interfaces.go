@@ -547,3 +547,36 @@ type CastMedia struct {
 	AppID string
 	Media map[string]any
 }
+
+// ListArtworkFetcher is implemented by providers whose browser entries, such
+// as albums and playlists, have covers. CanFetchListArtwork must not do I/O
+// because the UI calls it on the Update goroutine; FetchListArtwork runs from
+// a command goroutine.
+type ListArtworkFetcher interface {
+	CanFetchListArtwork(list playlist.PlaylistInfo) bool
+	FetchListArtwork(ctx context.Context, list playlist.PlaylistInfo) ([]byte, error)
+}
+
+// ListDetailer is implemented by providers that describe browser entries,
+// such as albums and playlists, beside the list. ListDetails must not do
+// I/O because the UI calls it while rendering.
+type ListDetailer interface {
+	ListDetails(list playlist.PlaylistInfo) (ListDescription, bool)
+}
+
+// ListDescription describes one browser entry. Lines are short facts such as
+// a release date or a track count.
+type ListDescription struct {
+	Title    string
+	Subtitle string
+	Lines    []string
+}
+
+// ArtworkFetcher is implemented by providers whose artwork requires an
+// authenticated request. FetchArtwork runs from a command goroutine, never
+// the Update loop. The returned bytes are cached by the caller and only the
+// resulting local file URL is exposed to UI and media-control consumers.
+type ArtworkFetcher interface {
+	CanFetchArtwork(track playlist.Track) bool
+	FetchArtwork(ctx context.Context, track playlist.Track) ([]byte, error)
+}

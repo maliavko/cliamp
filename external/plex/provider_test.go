@@ -1,11 +1,14 @@
 package plex
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,7 +66,7 @@ func sectionsHandler(t *testing.T) http.HandlerFunc {
 				"MediaContainer": {
 					"Metadata": [
 						{
-							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis",
+							"ratingKey":"200","title":"So What","grandparentTitle":"Miles Davis","thumb":"/library/metadata/200/thumb/1",
 							"parentTitle":"Kind of Blue","year":1959,"index":1,"duration":565000,
 							"Media":[{"Part":[{"key":"/library/parts/1/111/SoWhat.flac"}]}]
 						}
@@ -224,6 +227,9 @@ func TestProvider_Tracks(t *testing.T) {
 	}
 	if tr.TrackNumber != 1 {
 		t.Errorf("TrackNumber = %d, want 1", tr.TrackNumber)
+	}
+	if got := p.artKeys["200"]; got != "/library/metadata/200/thumb/1" {
+		t.Errorf("artwork key = %q", got)
 	}
 	if tr.DurationSecs != 565 {
 		t.Errorf("DurationSecs = %d, want 565", tr.DurationSecs)
@@ -435,6 +441,44 @@ func TestProvider_Tracks_SkipsMissingPart(t *testing.T) {
 	}
 	if tracks[0].Title != "Has Part" {
 		t.Errorf("expected 'Has Part', got %q", tracks[0].Title)
+	}
+}
+
+func TestProviderFetchArtworkKeepsTokenOffTrack(t *testing.T) {
+	want := "cover bytes"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/library/metadata/10/thumb/20" {
+			if got := r.Header.Get("X-Plex-Token"); got != "secret-token" {
+				t.Fatalf("artwork token header = %q", got)
+			}
+			if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+				t.Fatalf("artwork token leaked into query: %q", got)
+			}
+			_, _ = w.Write([]byte(want))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"1","title":"Song","thumb":"/library/metadata/10/thumb/20","Media":[{"Part":[{"key":"/library/parts/1/file.flac"}]}]}]}}`))
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "secret-token"))
+	tracks, err := p.Tracks("10")
+	if err != nil {
+		t.Fatalf("Tracks: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("tracks = %d, want 1", len(tracks))
+	}
+	if tracks[0].AlbumArtURL != "" {
+		t.Fatalf("playlist track persisted authenticated art URL %q", tracks[0].AlbumArtURL)
+	}
+	art, err := p.FetchArtwork(t.Context(), tracks[0])
+	if err != nil {
+		t.Fatalf("FetchArtwork: %v", err)
+	}
+	if string(art) != want {
+		t.Fatalf("artwork = %q, want %q", art, want)
 	}
 }
 
@@ -812,6 +856,32 @@ func TestProviderStationLists(t *testing.T) {
 	}
 }
 
+func TestProviderStationArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("station artwork requested %s", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	list := playlist.PlaylistInfo{ID: prefixStation + "/library/sections/3/stations/1", Section: sectionRadio}
+	if !p.CanFetchListArtwork(list) {
+		t.Fatal("CanFetchListArtwork = false for a station")
+	}
+	art, err := p.FetchListArtwork(t.Context(), list)
+	if err != nil {
+		t.Fatalf("FetchListArtwork: %v", err)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(art))
+	if err != nil || cfg.Width != cfg.Height {
+		t.Fatalf("station artwork = %dx%d, %v; want a square PNG", cfg.Width, cfg.Height, err)
+	}
+	art[0] = 0
+	if again, _ := p.FetchListArtwork(t.Context(), list); again[0] == 0 {
+		t.Fatal("FetchListArtwork returned the shared artwork buffer")
+	}
+}
+
 func TestProviderStationTracksStartFreshQueues(t *testing.T) {
 	srv, queues := stationServer(t, http.StatusOK)
 	p := newProvider(NewClient(srv.URL, "tok"))
@@ -1067,5 +1137,142 @@ func TestProviderOpenTrackFile(t *testing.T) {
 	got, _ := io.ReadAll(body)
 	if ext != ".flac" || string(got) != "flac bytes" {
 		t.Fatalf("OpenTrackFile = %q, %q; want .flac and the part's bytes", ext, got)
+	}
+}
+
+func TestProviderListArtwork(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/playlists/1/composite/9" || r.URL.Path == "/library/metadata/11/thumb/7":
+			if got := r.Header.Get("X-Plex-Token"); got != "tok" {
+				t.Fatalf("artwork token header = %q", got)
+			}
+			if got := r.URL.Query().Get("X-Plex-Token"); got != "" {
+				t.Fatalf("artwork token leaked into query: %q", got)
+			}
+			_, _ = w.Write([]byte("art:" + r.URL.Path))
+		case strings.HasSuffix(r.URL.Path, "/playlists"):
+			w.Write([]byte(`{"MediaContainer":{"Metadata":[
+				{"ratingKey":"1","title":"Mix","playlistType":"audio","leafCount":2,"composite":"/playlists/1/composite/9"}
+			]}}`))
+		case strings.HasSuffix(r.URL.Path, "/library/sections"):
+			w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"3","type":"artist","title":"Music"}]}}`))
+		case strings.HasSuffix(r.URL.Path, "/library/sections/3/all"):
+			w.Write([]byte(`{"MediaContainer":{"totalSize":2,"Metadata":[
+				{"ratingKey":"11","title":"With Art","parentTitle":"A","leafCount":1,"thumb":"/library/metadata/11/thumb/7",
+				 "studio":"Label","originallyAvailableAt":"2013-06-28","Genre":[{"tag":"Rock"}]},
+				{"ratingKey":"12","title":"No Art","parentTitle":"B","leafCount":1}
+			]}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	p := newProvider(NewClient(srv.URL, "tok"))
+	lists, err := p.Playlists()
+	if err != nil {
+		t.Fatalf("Playlists: %v", err)
+	}
+	byID := make(map[string]playlist.PlaylistInfo)
+	for _, l := range lists {
+		byID[l.ID] = l
+	}
+	tests := []struct {
+		id      string
+		want    bool
+		wantArt string
+	}{
+		{id: prefixPlaylist + "1", want: true, wantArt: "art:/playlists/1/composite/9"},
+		{id: "11", want: true, wantArt: "art:/library/metadata/11/thumb/7"},
+		{id: "12"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			list, ok := byID[tt.id]
+			if !ok {
+				t.Fatalf("list %q missing from %v", tt.id, lists)
+			}
+			if got := p.CanFetchListArtwork(list); got != tt.want {
+				t.Fatalf("CanFetchListArtwork = %v, want %v", got, tt.want)
+			}
+			art, err := p.FetchListArtwork(t.Context(), list)
+			if !tt.want {
+				if err == nil {
+					t.Fatal("FetchListArtwork succeeded without artwork")
+				}
+				return
+			}
+			if err != nil || string(art) != tt.wantArt {
+				t.Fatalf("FetchListArtwork = %q, %v; want %q", art, err, tt.wantArt)
+			}
+		})
+	}
+
+	d, ok := p.ListDetails(byID["11"])
+	if !ok || d.Title != "With Art" || d.Subtitle != "A" || !slices.Equal(d.Lines, []string{"2013-06-28 · Label", "Rock", "1 track"}) {
+		t.Fatalf("album details = %#v, %v", d, ok)
+	}
+	if d, ok := p.ListDetails(byID[prefixPlaylist+"1"]); !ok || d.Title != "Mix" {
+		t.Fatalf("playlist details = %#v, %v", d, ok)
+	}
+
+	p.Refresh()
+	if _, ok := p.ListDetails(byID["11"]); ok {
+		t.Fatal("Refresh kept stale list details")
+	}
+	if p.CanFetchListArtwork(byID["11"]) {
+		t.Fatal("Refresh kept stale list artwork")
+	}
+}
+
+func TestListDescriptions(t *testing.T) {
+	feb2026 := time.Date(2026, 2, 19, 12, 0, 0, 0, time.Local).Unix()
+	tests := []struct {
+		name string
+		got  provider.ListDescription
+		want provider.ListDescription
+	}{
+		{
+			name: "full album",
+			got: albumDescription(Album{
+				Title: "In Darkness", ArtistName: "Agathodaimon", Year: 2013, Released: "2013-06-28",
+				Studio: "Massacre Records", Genres: []string{"Black Metal", "Rock"}, TrackCount: 9,
+				ViewCount: 1, LastViewed: feb2026,
+			}),
+			want: provider.ListDescription{
+				Title: "In Darkness", Subtitle: "Agathodaimon",
+				Lines: []string{"2013-06-28 · Massacre Records", "Black Metal, Rock", "9 tracks", "Played once · Feb 2026"},
+			},
+		},
+		{
+			name: "sparse album",
+			got:  albumDescription(Album{Title: "Demo", ArtistName: "Band", Year: 1999, TrackCount: 1}),
+			want: provider.ListDescription{Title: "Demo", Subtitle: "Band", Lines: []string{"1999", "1 track"}},
+		},
+		{
+			name: "smart playlist",
+			got: playlistDescription(Playlist{
+				Title: "❤️ Tracks", Smart: true, TrackCount: 2543, DurationSecs: 693572,
+				ViewCount: 20, LastViewed: feb2026,
+			}),
+			want: provider.ListDescription{
+				Title: "❤️ Tracks", Subtitle: "Smart playlist",
+				Lines: []string{"2543 tracks · 192 h 40 min", "Played 20 times · Feb 2026"},
+			},
+		},
+		{
+			name: "short playlist",
+			got:  playlistDescription(Playlist{Title: "Mix", TrackCount: 3, DurationSecs: 600}),
+			want: provider.ListDescription{Title: "Mix", Subtitle: "Playlist", Lines: []string{"3 tracks · 10 min"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !reflect.DeepEqual(tt.got, tt.want) {
+				t.Fatalf("description = %#v\nwant %#v", tt.got, tt.want)
+			}
+		})
 	}
 }

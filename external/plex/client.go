@@ -193,7 +193,13 @@ type Album struct {
 	Title      string
 	ArtistName string // parentTitle in the Plex API
 	Year       int
-	TrackCount int // leafCount
+	TrackCount int    // leafCount
+	Thumb      string // authenticated artwork path
+	Released   string // originallyAvailableAt, e.g. "2013-06-28"
+	Studio     string // record label
+	Genres     []string
+	ViewCount  int
+	LastViewed int64 // lastViewedAt, Unix seconds
 }
 
 // Track represents a Plex track with metadata and its first streamable Part.
@@ -208,6 +214,7 @@ type Track struct {
 	Duration    int    // milliseconds
 	PartKey     string // relative path, e.g. "/library/parts/67890/1234567890/file.flac"
 	UserRating  float64
+	Thumb       string // authenticated artwork path
 }
 
 // Station is a radio station of a Plex music library, such as Library Radio
@@ -224,6 +231,24 @@ type Playlist struct {
 	TrackCount   int // leafCount
 	DurationSecs int // duration, converted from milliseconds
 	Smart        bool
+	Thumb        string // authenticated artwork path, the playlist's composite
+	ViewCount    int
+	LastViewed   int64 // lastViewedAt, Unix seconds
+}
+
+// plexTag is one entry of a Plex tag list such as Genre.
+type plexTag struct {
+	Tag string `json:"tag"`
+}
+
+func tagNames(tags []plexTag) []string {
+	names := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t.Tag != "" {
+			names = append(names, t.Tag)
+		}
+	}
+	return names
 }
 
 // get issues an authenticated GET request and decodes the JSON response into result.
@@ -288,6 +313,45 @@ func (c *Client) SetRating(ctx context.Context, ratingKey string, rating float64
 		"rating":     {fmt.Sprintf("%g", rating)},
 	}
 	return c.doAction(ctx, http.MethodPut, "/:/rate", params)
+}
+
+// Artwork downloads one server-relative artwork path with the active Plex
+// credentials. Tokens stay in request headers and never enter the returned
+// track metadata or cache filename.
+func (c *Client) Artwork(ctx context.Context, artworkPath string) ([]byte, error) {
+	u, err := url.Parse(artworkPath)
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
+		return nil, fmt.Errorf("plex: artwork: invalid path")
+	}
+	resp, err := c.send(ctx, apiClient, "artwork", func(baseURL, token string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+u.RequestURI(), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "image/*")
+		req.Header.Set("X-Plex-Product", "cliamp")
+		req.Header.Set("X-Plex-Client-Identifier", c.clientID)
+		req.Header.Set("X-Plex-Token", token)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("plex: token invalid or expired")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("plex: artwork: HTTP %s", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("plex: artwork: %w", err)
+	}
+	if len(raw) > maxResponseBody {
+		return nil, fmt.Errorf("plex: artwork exceeds %d bytes", maxResponseBody)
+	}
+	return raw, nil
 }
 
 // ReportTimeline updates Plex's view of the current playback position.
@@ -424,11 +488,17 @@ func (c *Client) Albums(sectionKey string) ([]Album, error) {
 			// distinguishable from one that reports zero.
 			TotalSize *int `json:"totalSize"`
 			Metadata  []struct {
-				RatingKey   string `json:"ratingKey"`
-				Title       string `json:"title"`
-				ParentTitle string `json:"parentTitle"` // artist name
-				Year        int    `json:"year"`
-				LeafCount   int    `json:"leafCount"` // track count
+				RatingKey   string    `json:"ratingKey"`
+				Title       string    `json:"title"`
+				ParentTitle string    `json:"parentTitle"` // artist name
+				Year        int       `json:"year"`
+				LeafCount   int       `json:"leafCount"` // track count
+				Thumb       string    `json:"thumb"`
+				Released    string    `json:"originallyAvailableAt"`
+				Studio      string    `json:"studio"`
+				ViewCount   int       `json:"viewCount"`
+				LastViewed  int64     `json:"lastViewedAt"`
+				Genre       []plexTag `json:"Genre"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
 	}
@@ -461,6 +531,12 @@ func (c *Client) Albums(sectionKey string) ([]Album, error) {
 				ArtistName: m.ParentTitle,
 				Year:       m.Year,
 				TrackCount: m.LeafCount,
+				Thumb:      m.Thumb,
+				Released:   m.Released,
+				Studio:     m.Studio,
+				Genres:     tagNames(m.Genre),
+				ViewCount:  m.ViewCount,
+				LastViewed: m.LastViewed,
 			})
 		}
 		// Advance by what the server actually returned, not by what was
@@ -491,6 +567,9 @@ func (c *Client) Playlists() ([]Playlist, error) {
 				PlaylistType string `json:"playlistType"`
 				LeafCount    int    `json:"leafCount"`
 				Duration     int    `json:"duration"`
+				Composite    string `json:"composite"`
+				ViewCount    int    `json:"viewCount"`
+				LastViewed   int64  `json:"lastViewedAt"`
 			} `json:"Metadata"`
 		} `json:"MediaContainer"`
 	}
@@ -509,6 +588,9 @@ func (c *Client) Playlists() ([]Playlist, error) {
 			TrackCount:   m.LeafCount,
 			DurationSecs: m.Duration / 1000,
 			Smart:        m.Smart,
+			Thumb:        m.Composite,
+			ViewCount:    m.ViewCount,
+			LastViewed:   m.LastViewed,
 		})
 	}
 	return playlists, nil
@@ -721,6 +803,8 @@ type trackJSON struct {
 	Index            int     `json:"index"`      // track number within album
 	Duration         int     `json:"duration"`   // milliseconds
 	UserRating       float64 `json:"userRating"`
+	Thumb            string  `json:"thumb"`
+	ParentThumb      string  `json:"parentThumb"`
 	Media            []struct {
 		Part []struct {
 			Key string `json:"key"`
@@ -737,6 +821,10 @@ func trackFromJSON(m trackJSON) Track {
 	if year == 0 {
 		year = m.ParentYear
 	}
+	thumb := m.Thumb
+	if thumb == "" {
+		thumb = m.ParentThumb
+	}
 	return Track{
 		RatingKey:   m.RatingKey,
 		Title:       m.Title,
@@ -748,6 +836,7 @@ func trackFromJSON(m trackJSON) Track {
 		Duration:    m.Duration,
 		PartKey:     partKey,
 		UserRating:  m.UserRating,
+		Thumb:       thumb,
 	}
 }
 

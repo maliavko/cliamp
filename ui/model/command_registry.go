@@ -193,7 +193,7 @@ var commandRegistry = []commandSpec{
 		return !m.simplified && m.layout.tier == layoutFull
 	}, Keymap: true},
 	{Mode: commandModeMain, Keys: []string{"i"}, KeyLabel: "i", Label: "Track info / metadata", Keymap: true, ContextHelp: true},
-	{Mode: commandModeMain | commandModeInfo, Keys: []string{"ctrl+i"}, KeyLabel: "Ctrl+I", Label: "Metadata", Keymap: true, ContextHelp: true},
+	{Mode: commandModeMain | commandModeInfo, Keys: []string{"ctrl+i"}, KeyLabel: "Ctrl+I", Label: "Metadata / cover", Keymap: true, ContextHelp: true},
 	{Mode: commandModeMain, Keys: []string{"ctrl+s"}, KeyLabel: "Ctrl+S", Label: "Save/download current track", Keymap: true},
 	{Mode: commandModeMain, Keys: []string{"ctrl+x"}, KeyLabel: "Ctrl+X", Label: "Expand/collapse view", Enabled: func(m Model) bool { return !m.simplified }, Keymap: true},
 	{Mode: commandModeMain, Keys: []string{"ctrl+x"}, KeyLabel: "Ctrl+X", Label: "Expand", Enabled: func(m Model) bool {
@@ -405,6 +405,7 @@ var commandRegistry = []commandSpec{
 	{Mode: commandModeFullVis, Keys: []string{"+", "=", "-"}, KeyLabel: "+ -", Label: "Volume up/down", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"v"}, KeyLabel: "v", Label: "Cycle visualizer", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"t"}, KeyLabel: "t", Label: "Hide track info", Keymap: true, ContextHelp: true},
+	{Mode: commandModeProvider, Keys: []string{"ctrl+i"}, KeyLabel: "Ctrl+I", Label: "Show / hide metadata", Keymap: true},
 	{Mode: commandModeFullVis, Keys: []string{"?"}, KeyLabel: "?", Label: "Help", Keymap: true},
 }
 

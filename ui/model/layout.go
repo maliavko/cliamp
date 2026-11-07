@@ -16,15 +16,19 @@ const (
 )
 
 type frameLayout struct {
-	tier               layoutTier
-	frameWidth         int
-	panelWidth         int
-	paddingH           int
-	paddingV           int
-	fixedRows          int
-	footerRows         int
-	bodyRows           int
-	visualizerRows     int
+	tier           layoutTier
+	frameWidth     int
+	panelWidth     int
+	paddingH       int
+	paddingV       int
+	fixedRows      int
+	footerRows     int
+	bodyRows       int
+	visualizerRows int
+	coverRows      int
+	// mainCoverRows is coverRows as the main view lays it out, so the
+	// provider browser can draw the same cover size.
+	mainCoverRows      int
 	baseVisualizerRows int
 	fullVisualizerRows int
 	// twoColumn splits the body region into the playlist (left) and the
@@ -111,10 +115,23 @@ func (l frameLayout) frameStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Padding(l.paddingV, l.paddingH).Width(l.frameWidth)
 }
 
+// sideColumnWidth is the width of the column right of the list: the settings
+// pane in the main view, the entry column in a provider browser.
+func sideColumnWidth(panelWidth int) int {
+	return min(settingsMaxWidth, max(settingsMinWidth, panelWidth/3))
+}
+
 // recomputeLayout picks the layout tier for the current terminal size and
 // derives the row budget from it: fixed chrome, the visualizer, and whatever
 // is left for the body.
 func (m *Model) recomputeLayout() {
+	m.layoutFor(true)
+}
+
+// layoutFor computes the layout and, when sizeVisualizer is set, sizes the
+// shared visualizer to it. A layout computed on a Model copy must not resize
+// the visualizer the real Model is drawing.
+func (m *Model) layoutFor(sizeVisualizer bool) {
 	width, height := m.width, m.height
 	if width <= 0 {
 		width = 80
@@ -188,7 +205,7 @@ func (m *Model) recomputeLayout() {
 		if m.hideSettings {
 			layout.closedSettings = true
 		} else {
-			settingsWidth := min(settingsMaxWidth, max(settingsMinWidth, layout.panelWidth/3))
+			settingsWidth := sideColumnWidth(layout.panelWidth)
 			if playlistWidth := layout.panelWidth - columnGutterWidth - settingsWidth; playlistWidth >= playlistMinWidth {
 				layout.twoColumn = true
 				layout.playlistWidth = playlistWidth
@@ -205,16 +222,40 @@ func (m *Model) recomputeLayout() {
 		layout.fixedRows = max(0, layout.fixedRows-1)
 	}
 	if layout.twoColumn && m.showMetadata && !m.visualizerDisabled() {
-		// Opening details can borrow visualizer rows, never hide direct settings.
-		// The configured height stays intact and returns when details close.
+		// Opening details can borrow visualizer rows, never hide direct settings
+		// or shrink an enabled cover below its useful minimum. The configured
+		// height stays intact and returns when details close.
 		bodyRows := height - 2*paddingV - layout.fixedRows - layout.footerRows
 		needed := 5 + metadataPaneMaxRows
 		if len(m.providers) > 1 {
 			needed++
 		}
-		freed := min(max(0, needed-bodyRows), max(0, layout.visualizerRows-1))
+		minVisualizerRows := 1
+		if m.coverEnabled() && layout.visualizerRows >= coverMinRows {
+			minVisualizerRows = coverMinRows
+		}
+		freed := min(max(0, needed-bodyRows), max(0, layout.visualizerRows-minVisualizerRows))
 		layout.visualizerRows -= freed
 		layout.fixedRows -= freed
+	}
+	layout.coverRows = layout.visualizerRows
+	if layout.twoColumn && m.showMetadata && m.cover.local != "" && m.coverEnabled() &&
+		!m.headless && !m.fullVis && !m.visualizerDisabled() {
+		// Once artwork is ready, the cover becomes a square as wide as the
+		// settings column, so it lines up with the column, and the visualizer
+		// beside it takes the same rows. It grows only into rows that every
+		// direct setting and a usable Metadata section leave free.
+		bodyRows := height - 2*paddingV - layout.fixedRows - layout.footerRows
+		controls := 5
+		if len(m.providers) > 1 {
+			controls++
+		}
+		cellWidth, cellHeight := m.cellSize()
+		rows := min(squareCoverRows(layout.settingsWidth, cellWidth, cellHeight),
+			layout.coverRows+max(0, bodyRows-controls-metadataPaneMinRows))
+		layout.fixedRows += rows - layout.coverRows
+		layout.coverRows = rows
+		layout.visualizerRows = rows
 	}
 
 	layout.fullVisualizerRows = max(1, height-6-2*paddingV)
@@ -235,8 +276,23 @@ func (m *Model) recomputeLayout() {
 		}
 	}
 
+	layout.mainCoverRows = layout.coverRows
+	if m.focus == focusProvider {
+		// The provider browser has no columns, so its own coverRows misses
+		// the main view's large cover. Lay out the main view on a copy.
+		main := *m
+		main.fullVis = false
+		main.focus = focusPlaylist
+		// The browser shows the cover of its own entry, so it gets the
+		// large size even while no track cover is loaded.
+		if main.cover.local == "" {
+			main.cover.local = "browser"
+		}
+		main.layoutFor(false)
+		layout.mainCoverRows = main.layout.coverRows
+	}
 	m.layout = layout
-	if m.vis != nil {
+	if sizeVisualizer && m.vis != nil {
 		m.vis.Cols = layout.panelWidth
 		if m.width <= 0 && !m.headless {
 			// Bubbletea draws a frame before the first WindowSizeMsg. The

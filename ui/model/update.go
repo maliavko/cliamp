@@ -3,6 +3,7 @@ package model
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/bjarneo/cliamp/internal/kittyimg"
 	"github.com/bjarneo/cliamp/internal/playback"
 	"github.com/bjarneo/cliamp/ui"
 )
@@ -25,6 +26,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		nm.recomputeLayout()
 		nm.dropStalePreload()
 		nm.notifyPlaybackChange()
+		if coverCmd := nm.ensureCover(); coverCmd != nil {
+			cmd = tea.Batch(cmd, coverCmd)
+		}
+		if coverCmd := nm.ensureInfoCover(); coverCmd != nil {
+			cmd = tea.Batch(cmd, coverCmd)
+		}
+		if coverCmd := nm.ensureListCover(); coverCmd != nil {
+			cmd = tea.Batch(cmd, coverCmd)
+		}
 		// A load that starts now gets its own redraws at once. The main tick
 		// can still wait up to ui.TickIdle before it runs at the spinner rate.
 		if !spinning && !nm.spinnerTicking && nm.spinnerVisible() {
@@ -116,6 +126,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// A font change resizes the window too, so the cell size stays current.
+		m.cover.cellWidth, m.cover.cellHeight, _ = kittyimg.CellSize()
 		m.recomputeLayout()
 		m.normalizeMainFocus()
 		m.clampActiveScrollState()
@@ -399,6 +411,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case trackFavoritesLoadedMsg:
 		// The provider now knows the state; the redraw shows it.
 		return m, nil
+
+	case coverLoadedMsg:
+		m.handleCoverLoaded(msg)
+		return m, nil
+
+	case coverRenderedMsg:
+		m.handleCoverRendered(msg)
+		return m, nil
+
+	case listCoverDueMsg:
+		return m, m.handleListCoverDue(msg)
 
 	case ShowStatusMsg:
 		ttl := statusTTLDefault

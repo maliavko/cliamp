@@ -322,6 +322,9 @@ type Model struct {
 	paneCache          *paneCache
 	luaSelect          *luaSelectState
 	artRef             *artRef
+	cover              coverState
+	infoCover          coverState // cover of the highlighted track in the info overlay
+	listCover          coverState // cover of the provider browser entry under the cursor
 	slotVis            *slotVisualizers
 	downloadsDirectory string
 	// audioDevice names the output device that the last device switch or
