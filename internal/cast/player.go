@@ -3,9 +3,12 @@ package cast
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/bjarneo/cliamp/applog"
 )
 
 // Resolver turns a track path into the receiver app that plays it and the
@@ -97,18 +100,8 @@ func (p *Player) PlayAtForGeneration(path string, knownDuration, offset time.Dur
 	if err != nil {
 		return p.setErr(err)
 	}
-	app, err := conn.Launch(ctx, appID)
+	app, st, err := launchAndLoad(ctx, conn, appID, media, offset > 0)
 	if err != nil {
-		return p.setErr(err)
-	}
-	if offset > 0 {
-		_ = conn.SetMuted(true)
-	}
-	st, err := conn.Load(ctx, app.TransportID, media)
-	if err != nil {
-		if offset > 0 {
-			_ = conn.SetMuted(false)
-		}
 		return p.setErr(err)
 	}
 
@@ -128,6 +121,68 @@ func (p *Player) PlayAtForGeneration(path string, knownDuration, offset time.Dur
 	}
 	_ = gen
 	return nil
+}
+
+// loadTimeout bounds one LOAD, so a load that the app never answers leaves
+// time to launch it again.
+const loadTimeout = commandTimeout
+
+// appCloseWait is how long a second launch waits for a closing app to leave.
+var appCloseWait = 3 * time.Second
+
+// launchAndLoad starts the app and loads media on it. The Plex receiver
+// closes itself when its one-track queue ends, so the next track can reach it
+// as it closes and get no answer. Then the app launches again and the track
+// loads once more. muted mutes the device while the track loads.
+func launchAndLoad(ctx context.Context, conn *Conn, appID string, media map[string]any, muted bool) (App, MediaStatus, error) {
+	var closing string
+	for attempt := 0; ; attempt++ {
+		if closing != "" {
+			waitAppClosed(ctx, conn, appID, closing)
+		}
+		app, err := conn.Launch(ctx, appID)
+		if err != nil {
+			return App{}, MediaStatus{}, err
+		}
+		if muted {
+			_ = conn.SetMuted(true)
+		}
+		loadCtx, cancel := context.WithTimeout(ctx, loadTimeout)
+		st, err := conn.Load(loadCtx, app.TransportID, media)
+		cancel()
+		if err == nil {
+			return app, st, nil
+		}
+		if muted {
+			_ = conn.SetMuted(false)
+		}
+		unanswered := errors.Is(err, ErrAppClosed) || errors.Is(err, context.DeadlineExceeded)
+		if attempt > 0 || ctx.Err() != nil || !unanswered {
+			return App{}, MediaStatus{}, fmt.Errorf("cast: load: %w", err)
+		}
+		applog.Info("cast: %s did not load the track (%v); launching it again", appID, err)
+		closing = app.TransportID
+	}
+}
+
+// waitAppClosed waits up to appCloseWait until the app at transport is gone,
+// so the next launch does not find it again.
+func waitAppClosed(ctx context.Context, conn *Conn, appID, transport string) {
+	deadline := time.Now().Add(appCloseWait)
+	for time.Now().Before(deadline) {
+		st, err := conn.ReceiverStatus(ctx)
+		if err != nil {
+			return
+		}
+		if app, ok := st.App(appID); !ok || app.TransportID != transport {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
 }
 
 // connection returns the open connection, dialing the device and reading its
