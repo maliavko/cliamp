@@ -17,6 +17,16 @@ const heartbeatInterval = 5 * time.Second
 // ErrClosed is returned by calls on a closed connection.
 var ErrClosed = errors.New("cast: connection closed")
 
+// ErrAppClosed is returned by a request whose app closed before it answered.
+var ErrAppClosed = errors.New("cast: the app closed")
+
+// pendingRequest waits for the reply to one request.
+type pendingRequest struct {
+	destination string
+	reply       chan map[string]any
+	closed      chan struct{} // closed when destination closes the connection
+}
+
 // Conn is a connection to one Cast device. Requests wait for the reply with
 // their requestId; messages that answer no request, such as a status the
 // device sends on its own, go to Events.
@@ -28,7 +38,7 @@ type Conn struct {
 
 	mu        sync.Mutex
 	nextID    int
-	pending   map[int]chan map[string]any
+	pending   map[int]pendingRequest
 	connected map[string]bool
 	err       error
 
@@ -56,7 +66,7 @@ func Dial(ctx context.Context, addr string) (*Conn, error) {
 	c := &Conn{
 		tc:        nc.(*tls.Conn),
 		source:    "sender-cliamp",
-		pending:   make(map[int]chan map[string]any),
+		pending:   make(map[int]pendingRequest),
 		connected: make(map[string]bool),
 		events:    make(chan Event, 16),
 		done:      make(chan struct{}),
@@ -103,8 +113,8 @@ func (c *Conn) Request(ctx context.Context, destination, namespace string, paylo
 	}
 	c.nextID++
 	id := c.nextID
-	reply := make(chan map[string]any, 1)
-	c.pending[id] = reply
+	req := pendingRequest{destination: destination, reply: make(chan map[string]any, 1), closed: make(chan struct{})}
+	c.pending[id] = req
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
@@ -117,8 +127,10 @@ func (c *Conn) Request(ctx context.Context, destination, namespace string, paylo
 		return nil, err
 	}
 	select {
-	case p := <-reply:
+	case p := <-req.reply:
 		return p, nil
+	case <-req.closed:
+		return nil, fmt.Errorf("cast: %s: %w", destination, ErrAppClosed)
 	case <-c.done:
 		return nil, c.Err()
 	case <-ctx.Done():
@@ -190,16 +202,23 @@ func (c *Conn) readLoop() {
 			continue
 		case m.namespace == NamespaceConnection && p["type"] == "CLOSE":
 			// The app closed its side, as when another sender takes over.
+			// Its requests get no answer now.
 			c.mu.Lock()
 			delete(c.connected, m.source)
+			for id, req := range c.pending {
+				if req.destination == m.source {
+					close(req.closed)
+					delete(c.pending, id)
+				}
+			}
 			c.mu.Unlock()
 		}
 		if id, ok := p["requestId"].(float64); ok && id > 0 {
 			c.mu.Lock()
-			reply := c.pending[int(id)]
+			req, ok := c.pending[int(id)]
 			c.mu.Unlock()
-			if reply != nil {
-				reply <- p
+			if ok {
+				req.reply <- p
 				continue
 			}
 		}
